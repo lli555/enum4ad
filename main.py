@@ -16,6 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
 from utils import validate_ips, setup_logging, create_output_directory
 from port_scanner import PortScanner
 from enumerators.full_enum import FullEnumerator
+from enumerators.vuln_enum import VulnEnumerator
 
 
 def parse_arguments():
@@ -28,6 +29,7 @@ Examples:
   %(prog)s -pc 10.1.1.1,10.1.1.2     Port scan specific IPs
   %(prog)s -f 192.168.1.0/24         Full enumeration of network range
   %(prog)s -f 10.1.1.1,10.1.1.5     Full enumeration of specific IPs
+  %(prog)s -vulns 10.1.1.1,10.1.1.2 Vulnerability scan specific IPs
         """
     )
     
@@ -41,6 +43,11 @@ Examples:
         '-f', '--full',
         metavar='IPs',
         help='Full enumeration. Comma-separated IPs or CIDR (e.g., 192.168.1.0/24)'
+    )
+    group.add_argument(
+        '-vulns', '--vulnerabilities',
+        metavar='IPs',
+        help='Vulnerability scan using NetExec modules. Comma-separated IPs (e.g., 10.1.1.1,10.1.1.2)'
     )
     
     parser.add_argument(
@@ -101,6 +108,24 @@ async def main():
         results = await enumerator.enumerate_targets(ips)
         
         logger.info(f"Full enumeration completed. Results saved to {output_dir}")
+        
+    elif args.vulnerabilities:
+        ips = validate_ips(args.vulnerabilities)
+        if not ips:
+            logger.error("No valid IPs provided for vulnerability scan")
+            return 1
+            
+        logger.info(f"Starting vulnerability scan for {len(ips)} targets")
+        vuln_scanner = VulnEnumerator(output_dir)
+        results = await vuln_scanner.scan_vulnerabilities(ips)
+        
+        # Generate and display summary
+        summary = await vuln_scanner.generate_summary(results)
+        logger.info("Vulnerability scan summary:")
+        for line in summary.split('\n'):
+            logger.info(line)
+        
+        logger.info(f"Vulnerability scan completed. Results saved to {output_dir}")
     
     return 0
 

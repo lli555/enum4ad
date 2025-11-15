@@ -40,6 +40,11 @@ class SMBEnumerator:
         if enum4linux_result:
             results['enumeration_results'].append(enum4linux_result)
         
+        # Guest user check
+        guest_result = await self._check_guest_user(ip)
+        if guest_result:
+            results['enumeration_results'].append(guest_result)
+        
         return results
     
     async def _enumerate_shares(self, ip: str) -> Dict:
@@ -113,4 +118,41 @@ class SMBEnumerator:
             
         except Exception as e:
             self.logger.error(f"enum4linux-ng scan failed for {ip}: {e}")
+            return None
+    
+    async def _check_guest_user(self, ip: str) -> Dict:
+        """Check if Guest user is enabled"""
+        cmd = ['netexec', 'smb', ip, '-u', 'Guest', '-p', '']
+        
+        try:
+            self.logger.info(f"Checking Guest user access on {ip}")
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            output = stdout.decode() + stderr.decode()
+            
+            # Save results
+            file_path = save_enumeration_result(
+                self.output_dir, ip, 'smb_guest_check', output, f"smb_guest_{ip}.txt"
+            )
+            
+            # Determine if guest access is enabled based on output
+            guest_enabled = "STATUS_SUCCESS" in output or "LOGIN_SUCCESS" in output or "[+]" in output
+            
+            return {
+                'type': 'guest_check',
+                'command': ' '.join(cmd),
+                'output': output,
+                'file': file_path,
+                'guest_enabled': guest_enabled,
+                'success': process.returncode == 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Guest user check failed for {ip}: {e}")
             return None
