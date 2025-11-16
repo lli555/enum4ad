@@ -33,10 +33,17 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return logger
 
 
-def create_output_directory(base_dir: str) -> str:
+def create_output_directory(base_dir: str, base_path: str = None) -> str:
     """Create output directory with timestamp"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = f"{base_dir}_{timestamp}"
+    output_dir_name = f"{base_dir}_{timestamp}"
+    
+    if base_path:
+        # Use the provided base path
+        output_dir = os.path.join(base_path, output_dir_name)
+    else:
+        # Use current directory
+        output_dir = output_dir_name
     
     try:
         os.makedirs(output_dir, exist_ok=True)

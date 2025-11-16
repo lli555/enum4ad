@@ -33,6 +33,7 @@ Examples:
   %(prog)s -vulns 10.1.1.1,10.1.1.2 Vulnerability scan specific IPs
   %(prog)s -auth 10.1.1.1 -user domain/user -p password    Authenticated enumeration
   %(prog)s -auth 192.168.1.0/24 -user user -p pass --local-auth    Auth enum with local auth
+  %(prog)s -f 10.1.1.1 -o custom_scan --output-path /tmp    Custom output location
         """
     )
     
@@ -62,7 +63,13 @@ Examples:
         '-o', '--output',
         metavar='DIR',
         default='ad_enum_results',
-        help='Output directory (default: ad_enum_results)'
+        help='Output directory name (default: ad_enum_results)'
+    )
+    
+    parser.add_argument(
+        '--output-path',
+        metavar='PATH',
+        help='Custom path for output directory (default: current directory)'
     )
     
     parser.add_argument(
@@ -112,7 +119,7 @@ async def main():
     
     # Setup logging and output directory
     logger = setup_logging(args.verbose)
-    output_dir = create_output_directory(args.output)
+    output_dir = create_output_directory(args.output, args.output_path)
     
     logger.info(f"AD Enumeration Tool started")
     logger.info(f"Output directory: {output_dir}")
