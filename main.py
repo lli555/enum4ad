@@ -17,6 +17,7 @@ from utils import validate_ips, setup_logging, create_output_directory
 from port_scanner import PortScanner
 from enumerators.full_enum import FullEnumerator
 from enumerators.vuln_enum import VulnEnumerator
+from enumerators.auth_enum import AuthEnumerator
 
 
 def parse_arguments():
@@ -26,16 +27,18 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s -pc 10.1.1.1,10.1.1.2     Port scan specific IPs
+  %(prog)s -ps 10.1.1.1,10.1.1.2     Port scan specific IPs
   %(prog)s -f 192.168.1.0/24         Full enumeration of network range
   %(prog)s -f 10.1.1.1,10.1.1.5     Full enumeration of specific IPs
   %(prog)s -vulns 10.1.1.1,10.1.1.2 Vulnerability scan specific IPs
+  %(prog)s -auth 10.1.1.1 -user domain/user -p password    Authenticated enumeration
+  %(prog)s -auth 192.168.1.0/24 -user user -p pass --local-auth    Auth enum with local auth
         """
     )
     
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        '-pc', '--portscan',
+        '-ps', '--portscan',
         metavar='IPs',
         help='Perform port scan only. Comma-separated IPs (e.g., 10.1.1.1,10.1.1.2)'
     )
@@ -48,6 +51,11 @@ Examples:
         '-vulns', '--vulnerabilities',
         metavar='IPs',
         help='Vulnerability scan using NetExec modules. Comma-separated IPs (e.g., 10.1.1.1,10.1.1.2)'
+    )
+    group.add_argument(
+        '-auth', '--authenticated',
+        metavar='IPs',
+        help='Authenticated enumeration using provided credentials. Comma-separated IPs (e.g., 10.1.1.1,10.1.1.2)'
     )
     
     parser.add_argument(
@@ -70,12 +78,37 @@ Examples:
         help='Verbose output'
     )
     
+    # Credential-based enumeration options
+    parser.add_argument(
+        '-user', '--username',
+        metavar='DOMAIN/USERNAME',
+        help='Domain username for authenticated enumeration (format: domain/username or username)'
+    )
+    
+    parser.add_argument(
+        '-p', '--password',
+        metavar='PASSWORD',
+        help='Password for authenticated enumeration'
+    )
+    
+    parser.add_argument(
+        '--local-auth',
+        action='store_true',
+        help='Use local authentication instead of domain authentication'
+    )
+    
     return parser.parse_args()
 
 
 async def main():
     """Main function"""
     args = parse_arguments()
+    
+    # Validate credential parameters for authenticated mode
+    if args.authenticated:
+        if not args.username or not args.password:
+            print("Error: Both username (-user) and password (-p) are required for authenticated enumeration")
+            return 1
     
     # Setup logging and output directory
     logger = setup_logging(args.verbose)
@@ -126,6 +159,24 @@ async def main():
             logger.info(line)
         
         logger.info(f"Vulnerability scan completed. Results saved to {output_dir}")
+        
+    elif args.authenticated:
+        ips = validate_ips(args.authenticated)
+        if not ips:
+            logger.error("No valid IPs provided for authenticated enumeration")
+            return 1
+            
+        logger.info(f"Starting authenticated enumeration for {len(ips)} targets")
+        auth_scanner = AuthEnumerator(output_dir, args.username, args.password, args.local_auth)
+        results = await auth_scanner.enumerate_targets(ips)
+        
+        # Generate and display summary
+        summary = await auth_scanner.generate_summary(results)
+        logger.info("Authenticated enumeration summary:")
+        for line in summary.split('\n'):
+            logger.info(line)
+        
+        logger.info(f"Authenticated enumeration completed. Results saved to {output_dir}")
     
     return 0
 
