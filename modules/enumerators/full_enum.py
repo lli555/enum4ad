@@ -14,13 +14,13 @@ from enumerators.web_enum import WebEnumerator
 class FullEnumerator:
     """Full enumeration coordinator"""
     
-    def __init__(self, output_dir: str, max_concurrent: int = 10):
+    def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False):
         self.output_dir = output_dir
         self.max_concurrent = max_concurrent
         self.logger = logging.getLogger('adtool')
         
         # Initialize components
-        self.port_scanner = PortScanner(output_dir, max_concurrent)
+        self.port_scanner = PortScanner(output_dir, max_concurrent, use_rustscan=use_rustscan)
         self.smb_enumerator = SMBEnumerator(output_dir)
         self.ldap_enumerator = LDAPEnumerator(output_dir)
         self.web_enumerator = WebEnumerator(output_dir)

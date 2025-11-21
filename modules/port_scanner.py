@@ -6,6 +6,7 @@ import asyncio
 import subprocess
 import os
 import logging
+import shutil
 from typing import List, Dict
 from utils import parse_nmap_output, get_service_type
 
@@ -13,28 +14,39 @@ from utils import parse_nmap_output, get_service_type
 class PortScanner:
     """Port scanner using nmap"""
     
-    def __init__(self, output_dir: str, max_concurrent: int = 10):
+    def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False):
         self.output_dir = output_dir
         self.max_concurrent = max_concurrent
         self.logger = logging.getLogger('adtool')
         self.semaphore = asyncio.Semaphore(max_concurrent)
+        self.use_rustscan = use_rustscan
     
     async def scan_target(self, ip: str) -> Dict:
         """Scan a single target with nmap"""
         async with self.semaphore:
-            output_file = os.path.join(self.output_dir, "nmap", f"nmap_{ip}.txt")
-            
-            # Nmap command as specified
-            cmd = [
-                'nmap',
-                '-Pn',      # Skip host discovery
-                '-n',       # No DNS resolution
-                ip,
-                '-sC',      # Default scripts
-                '-sV',      # Version detection
-                '-oN',      # Normal output
-                output_file
-            ]
+            # sanitize ip for filenames (handles IPv6 and CIDR)
+            safe_ip = ip.replace(':', '_').replace('/', '_') # Probably not needed here but just in case
+            output_dir_nmap = os.path.join(self.output_dir, "nmap")
+            os.makedirs(output_dir_nmap, exist_ok=True)
+            output_file = os.path.join(output_dir_nmap, f"nmap_{safe_ip}.txt")
+
+            # Build command. Put IP last for nmap so options are interpreted correctly.
+            if self.use_rustscan:
+                # rustscan will call nmap with the provided args after --
+                rustscan_bin = shutil.which('rustscan') or 'rustscan'
+                nmap_args = ['-Pn', '-n', '-sC', '-sV', '-oN', output_file]
+                cmd = [rustscan_bin, '-a', ip, '-r', '1-65535', '-u', '5000', '--'] + nmap_args
+            else:
+                cmd = [
+                    'nmap',
+                    '-Pn',      # Skip host discovery
+                    '-n',       # No DNS resolution
+                    '-sC',      # Default scripts
+                    '-sV',      # Version detection
+                    '-oN',      # Normal output
+                    output_file,
+                    ip
+                ]
             
             self.logger.info(f"Scanning {ip}...")
             
@@ -50,13 +62,22 @@ class PortScanner:
                 
                 if process.returncode == 0:
                     self.logger.info(f"Scan completed for {ip}")
-                    # Parse the results
-                    result = parse_nmap_output(output_file)
-                    result['success'] = True
-                    return result
                 else:
-                    self.logger.error(f"Nmap scan failed for {ip}: {stderr.decode()}")
-                    return {'ip': ip, 'success': False, 'error': stderr.decode()}
+                    self.logger.error(f"Scan process returned code {process.returncode} for {ip}: {stderr.decode()}")
+
+                # Parse the results if the output file exists
+                try:
+                    if os.path.exists(output_file):
+                        result = parse_nmap_output(output_file) or {}
+                        result.setdefault('ip', ip)
+                        result['success'] = True if process.returncode == 0 else result.get('success', False)
+                        return result
+                    else:
+                        err_msg = stderr.decode() if stderr else 'nmap did not produce output file'
+                        return {'ip': ip, 'success': False, 'error': err_msg}
+                except Exception as e:
+                    self.logger.exception(f"Error parsing nmap output for {ip}: {e}")
+                    return {'ip': ip, 'success': False, 'error': str(e)}
                     
             except Exception as e:
                 self.logger.error(f"Error scanning {ip}: {e}")

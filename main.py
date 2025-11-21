@@ -103,6 +103,13 @@ Examples:
         action='store_true',
         help='Use local authentication instead of domain authentication'
     )
+
+    parser.add_argument(
+        '--rustscan',
+        action='store_true',
+        dest='rustscan',
+        help='Use RustScan for faster port scanning (default: disabled).'
+    )
     
     return parser.parse_args()
 
@@ -132,7 +139,8 @@ async def main():
             return 1
             
         logger.info(f"Starting port scan for {len(ips)} targets")
-        scanner = PortScanner(output_dir, args.threads)
+        # If --rustscan provided, use rustscan
+        scanner = PortScanner(output_dir, args.threads, use_rustscan=args.rustscan)
         results = await scanner.scan_targets(ips)
         
         logger.info(f"Port scan completed. Results saved to {output_dir}")
@@ -144,7 +152,7 @@ async def main():
             return 1
             
         logger.info(f"Starting full enumeration for {len(ips)} targets")
-        enumerator = FullEnumerator(output_dir, args.threads)
+        enumerator = FullEnumerator(output_dir, args.threads, use_rustscan=args.rustscan)
         results = await enumerator.enumerate_targets(ips)
         
         logger.info(f"Full enumeration completed. Results saved to {output_dir}")
