@@ -345,7 +345,16 @@ class AuthEnumerator:
             return None
         
         output_file = f"{self.user}_enumlinux"
-        enum_dir = os.path.join(self.output_dir, "enumeration", "smb", "authenticated")
+        
+        # Check if we're using simplified authenticated directory structure
+        enumeration_path = os.path.join(self.output_dir, "enumeration")
+        if os.path.exists(enumeration_path):
+            # Full directory structure
+            enum_dir = os.path.join(self.output_dir, "enumeration", "smb", "authenticated")
+        else:
+            # Simplified directory structure
+            enum_dir = os.path.join(self.output_dir, "smb")
+        
         cmd = ['enum4linux-ng', ip, '-u', self.user, '-p', self.password, '-oY', os.path.join(enum_dir, f"{output_file}.txt")]
         
         try:

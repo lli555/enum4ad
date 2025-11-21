@@ -33,10 +33,15 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return logger
 
 
-def create_output_directory(base_dir: str, base_path: str = None) -> str:
+def create_output_directory(base_dir: str, base_path: str = None, scan_mode: str = "full") -> str:
     """Create output directory with timestamp"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir_name = f"{base_dir}_{timestamp}"
+    
+    # Use different directory naming based on scan mode
+    if scan_mode == "authenticated":
+        output_dir_name = f"authenticated_enum_{timestamp}"
+    else:
+        output_dir_name = f"{base_dir}_{timestamp}"
     
     if base_path:
         # Use the provided base path
@@ -47,28 +52,35 @@ def create_output_directory(base_dir: str, base_path: str = None) -> str:
     
     try:
         os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(os.path.join(output_dir, "nmap"), exist_ok=True)
         
-        # Create main enumeration directory
-        enumeration_dir = os.path.join(output_dir, "enumeration")
-        os.makedirs(enumeration_dir, exist_ok=True)
-        
-        # Create service-specific directories
-        services = ["ldap", "smb", "web", "vuln"]
-        auth_types = ["unauthenticated", "authenticated"]
-        
-        for service in services:
-            service_dir = os.path.join(enumeration_dir, service)
-            os.makedirs(service_dir, exist_ok=True)
+        if scan_mode == "authenticated":
+            # For authenticated scans, create minimal structure
+            # Only create directories that will actually be used
+            services = ["ldap", "smb", "misc"]  # Only services used in auth enum
             
-            # Create auth subdirectories for each service
-            for auth_type in auth_types:
-                auth_dir = os.path.join(service_dir, auth_type)
-                os.makedirs(auth_dir, exist_ok=True)
-        
-        # Create general directory for miscellaneous results
-        misc_dir = os.path.join(enumeration_dir, "misc")
-        os.makedirs(misc_dir, exist_ok=True)
+            for service in services:
+                service_dir = os.path.join(output_dir, service)
+                os.makedirs(service_dir, exist_ok=True)
+        else:
+            # For other scan modes, create full structure
+            os.makedirs(os.path.join(output_dir, "nmap"), exist_ok=True)
+            
+            # Create main enumeration directory
+            enumeration_dir = os.path.join(output_dir, "enumeration")
+            os.makedirs(enumeration_dir, exist_ok=True)
+            
+            # Create service-specific directories
+            services = ["ldap", "smb", "web", "vuln", "misc"]
+            auth_types = ["unauthenticated", "authenticated"]
+            
+            for service in services:
+                service_dir = os.path.join(enumeration_dir, service)
+                os.makedirs(service_dir, exist_ok=True)
+                
+                # Create auth subdirectories for each service
+                for auth_type in auth_types:
+                    auth_dir = os.path.join(service_dir, auth_type)
+                    os.makedirs(auth_dir, exist_ok=True)
         
         return output_dir
     except Exception as e:
@@ -225,18 +237,22 @@ def save_enumeration_result(output_dir: str, ip: str, service: str, data: str, f
         else:
             service_type = 'misc'
     
-    # Determine authentication subdirectory
-    auth_subdir = 'authenticated' if authenticated else 'unauthenticated'
-    
-    # Build file path
-    file_path = os.path.join(output_dir, "enumeration", service_type, auth_subdir, filename)
+    # Check if this is a simplified authenticated directory structure
+    enumeration_path = os.path.join(output_dir, "enumeration")
+    if os.path.exists(enumeration_path):
+        # Full directory structure (non-authenticated scans)
+        auth_subdir = 'authenticated' if authenticated else 'unauthenticated'
+        file_path = os.path.join(output_dir, "enumeration", service_type, auth_subdir, filename)
+    else:
+        # Simplified directory structure (authenticated scans)
+        file_path = os.path.join(output_dir, service_type, filename)
     
     try:
         with open(file_path, 'w') as f:
             f.write(f"Service: {service}\n")
             f.write(f"Target: {ip}\n")
             f.write(f"Service Type: {service_type}\n")
-            f.write(f"Authentication: {auth_subdir}\n")
+            f.write(f"Authentication: {'authenticated' if authenticated else 'unauthenticated'}\n")
             f.write(f"Timestamp: {datetime.now().isoformat()}\n")
             f.write("=" * 50 + "\n\n")
             f.write(data)

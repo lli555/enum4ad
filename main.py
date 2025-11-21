@@ -126,7 +126,10 @@ async def main():
     
     # Setup logging and output directory
     logger = setup_logging(args.verbose)
-    output_dir = create_output_directory(args.output, args.output_path)
+    
+    # Determine scan mode for directory structure
+    scan_mode = "authenticated" if args.authenticated else "full"
+    output_dir = create_output_directory(args.output, args.output_path, scan_mode)
     
     logger.info(f"AD Enumeration Tool started")
     logger.info(f"Output directory: {output_dir}")
