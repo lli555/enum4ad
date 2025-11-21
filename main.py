@@ -60,16 +60,16 @@ Examples:
     )
     
     parser.add_argument(
-        '-o', '--output',
-        metavar='DIR',
+        '--path-prefix',
+        metavar='PREFIX',
         default='ad_enum_results',
-        help='Output directory name (default: ad_enum_results)'
+        help='Output directory prefix, will end up like "ad_enum_results_20251121_155849" (default: ad_enum_results)'
     )
     
     parser.add_argument(
-        '--output-path',
-        metavar='PATH',
-        help='Custom path for output directory (default: current directory)'
+        '-o', '--output-dir',
+        metavar='DIR',
+        help='Custom path for output directory, where time-based result directories will reside (default: current directory)'
     )
     
     parser.add_argument(
@@ -129,7 +129,7 @@ async def main():
     
     # Determine scan mode for directory structure
     scan_mode = "authenticated" if args.authenticated else "full"
-    output_dir = create_output_directory(args.output, args.output_path, scan_mode)
+    output_dir = create_output_directory(args.output_dir, args.path_prefix, scan_mode, port_scan_only=(args.portscan is not None))
     
     logger.info(f"AD Enumeration Tool started")
     logger.info(f"Output directory: {output_dir}")
