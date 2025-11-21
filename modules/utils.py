@@ -33,7 +33,7 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return logger
 
 
-def create_output_directory(base_dir: str, path_prefix: str = None, scan_mode: str = "full", port_scan_only: bool = False) -> str:
+def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results', scan_mode: str = "full", port_scan_only: bool = False) -> str:  
     """Create output directory with timestamp"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
