@@ -5,6 +5,7 @@ SMB enumeration module using netexec
 import asyncio
 import subprocess
 import logging
+import os
 from typing import Dict, List
 from utils import save_enumeration_result, is_command_available
 
@@ -65,7 +66,8 @@ class SMBEnumerator:
             
             # Save results
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'smb_shares', output, f"smb_shares_{ip}.txt"
+                self.output_dir, ip, 'smb_shares', output, f"smb_shares_{ip}.txt",
+                service_type='smb', authenticated=False
             )
             
             return {
@@ -87,7 +89,8 @@ class SMBEnumerator:
             return None
         
         output_file = f"enum4linux_{ip}"
-        cmd = ['enum4linux-ng', '-A', ip, '-oJ', output_file]
+        enum_dir = os.path.join(self.output_dir, "enumeration", "smb", "unauthenticated")
+        cmd = ['enum4linux-ng', '-A', ip, '-oJ', os.path.join(enum_dir, output_file)]
         
         try:
             self.logger.info(f"Running enum4linux-ng on {ip}")
@@ -95,8 +98,7 @@ class SMBEnumerator:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=f"{self.output_dir}/enumeration"
+                stderr=asyncio.subprocess.PIPE
             )
             
             stdout, stderr = await process.communicate()
@@ -104,7 +106,8 @@ class SMBEnumerator:
             
             # Save the text output as well
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'enum4linux', output, f"enum4linux_{ip}.txt"
+                self.output_dir, ip, 'enum4linux', output, f"enum4linux_{ip}.txt",
+                service_type='smb', authenticated=False
             )
             
             return {
@@ -112,7 +115,7 @@ class SMBEnumerator:
                 'command': ' '.join(cmd),
                 'output': output,
                 'file': file_path,
-                'json_file': f"{self.output_dir}/enumeration/{output_file}.json",
+                'json_file': f"{enum_dir}/{output_file}.json",
                 'success': process.returncode == 0
             }
             
@@ -138,7 +141,8 @@ class SMBEnumerator:
             
             # Save results
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'smb_guest_check', output, f"smb_guest_{ip}.txt"
+                self.output_dir, ip, 'smb_guest_check', output, f"smb_guest_{ip}.txt",
+                service_type='smb', authenticated=False
             )
             
             # Determine if guest access is enabled based on output

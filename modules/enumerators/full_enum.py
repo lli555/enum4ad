@@ -81,7 +81,7 @@ class FullEnumerator:
     
     def _generate_summary(self, results: List[Dict]):
         """Generate enumeration summary"""
-        summary_file = f"{self.output_dir}/enumeration_summary.txt"
+        summary_file = f"{self.output_dir}/enumeration/misc/unauthenticated/enumeration_summary.txt"
         
         try:
             with open(summary_file, 'w') as f:

@@ -90,7 +90,8 @@ class VulnEnumerator:
             
             # Save results
             file_path = save_enumeration_result(
-                self.output_dir, ip, f'vuln_{module}', output, f"vuln_{module}_{ip}.txt"
+                self.output_dir, ip, f'vuln_{module}', output, f"vuln_{module}_{ip}.txt",
+                service_type='vuln', authenticated=False
             )
             
             # Analyze output for vulnerability indicators
@@ -204,7 +205,8 @@ class VulnEnumerator:
         # Save summary to file
         summary_text = "\n".join(summary_lines)
         summary_file = save_enumeration_result(
-            self.output_dir, "summary", "vulnerability_scan", summary_text, "vulnerability_summary.txt"
+            self.output_dir, "summary", "vulnerability_scan", summary_text, "vulnerability_summary.txt",
+            service_type='vuln', authenticated=False
         )
         
         return summary_text

@@ -48,7 +48,28 @@ def create_output_directory(base_dir: str, base_path: str = None) -> str:
     try:
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(os.path.join(output_dir, "nmap"), exist_ok=True)
-        os.makedirs(os.path.join(output_dir, "enumeration"), exist_ok=True)
+        
+        # Create main enumeration directory
+        enumeration_dir = os.path.join(output_dir, "enumeration")
+        os.makedirs(enumeration_dir, exist_ok=True)
+        
+        # Create service-specific directories
+        services = ["ldap", "smb", "web", "vuln"]
+        auth_types = ["unauthenticated", "authenticated"]
+        
+        for service in services:
+            service_dir = os.path.join(enumeration_dir, service)
+            os.makedirs(service_dir, exist_ok=True)
+            
+            # Create auth subdirectories for each service
+            for auth_type in auth_types:
+                auth_dir = os.path.join(service_dir, auth_type)
+                os.makedirs(auth_dir, exist_ok=True)
+        
+        # Create general directory for miscellaneous results
+        misc_dir = os.path.join(enumeration_dir, "misc")
+        os.makedirs(misc_dir, exist_ok=True)
+        
         return output_dir
     except Exception as e:
         raise Exception(f"Failed to create output directory: {e}")
@@ -183,18 +204,39 @@ def get_service_type(port: int, service_name: str) -> str:
         return 'unknown'
 
 
-def save_enumeration_result(output_dir: str, ip: str, service: str, data: str, filename: str = None) -> str:
-    """Save enumeration results to file"""
+def save_enumeration_result(output_dir: str, ip: str, service: str, data: str, filename: str = None, service_type: str = None, authenticated: bool = False) -> str:
+    """Save enumeration results to file in appropriate subdirectory"""
     if not filename:
         timestamp = datetime.now().strftime("%H%M%S")
         filename = f"{service}_{ip}_{timestamp}.txt"
     
-    file_path = os.path.join(output_dir, "enumeration", filename)
+    # Determine service type for directory structure
+    if service_type is None:
+        # Try to infer service type from service name
+        service_lower = service.lower()
+        if 'ldap' in service_lower:
+            service_type = 'ldap'
+        elif 'smb' in service_lower:
+            service_type = 'smb'
+        elif 'web' in service_lower or 'http' in service_lower:
+            service_type = 'web'
+        elif 'vuln' in service_lower or 'vulnerability' in service_lower:
+            service_type = 'vuln'
+        else:
+            service_type = 'misc'
+    
+    # Determine authentication subdirectory
+    auth_subdir = 'authenticated' if authenticated else 'unauthenticated'
+    
+    # Build file path
+    file_path = os.path.join(output_dir, "enumeration", service_type, auth_subdir, filename)
     
     try:
         with open(file_path, 'w') as f:
             f.write(f"Service: {service}\n")
             f.write(f"Target: {ip}\n")
+            f.write(f"Service Type: {service_type}\n")
+            f.write(f"Authentication: {auth_subdir}\n")
             f.write(f"Timestamp: {datetime.now().isoformat()}\n")
             f.write("=" * 50 + "\n\n")
             f.write(data)

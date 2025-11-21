@@ -76,7 +76,8 @@ class WebEnumerator:
             output = stdout.decode() + stderr.decode()
             
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'web_dirs', output, f"web_dirs_{ip}_{port}.txt"
+                self.output_dir, ip, 'web_dirs', output, f"web_dirs_{ip}_{port}.txt",
+                service_type='web', authenticated=False
             )
             
             return {
@@ -112,7 +113,8 @@ class WebEnumerator:
             output = stdout.decode() + stderr.decode()
             
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'web_nikto', output, f"web_nikto_{ip}_{port}.txt"
+                self.output_dir, ip, 'web_nikto', output, f"web_nikto_{ip}_{port}.txt",
+                service_type='web', authenticated=False
             )
             
             return {
@@ -148,7 +150,8 @@ class WebEnumerator:
             output = stdout.decode() + stderr.decode()
             
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'web_headers', output, f"web_headers_{ip}_{port}.txt"
+                self.output_dir, ip, 'web_headers', output, f"web_headers_{ip}_{port}.txt",
+                service_type='web', authenticated=False
             )
             
             return {

@@ -5,6 +5,7 @@ Authenticated enumeration module using provided credentials
 import asyncio
 import subprocess
 import logging
+import os
 from typing import Dict, List, Optional
 from utils import save_enumeration_result, is_command_available
 
@@ -154,7 +155,8 @@ class AuthEnumerator:
             # Save results
             filename = f"smb_shares_{auth_type}_{ip}.txt"
             file_path = save_enumeration_result(
-                self.output_dir, ip, f'smb_shares_{auth_type}', output, filename
+                self.output_dir, ip, f'smb_shares_{auth_type}', output, filename,
+                service_type='smb', authenticated=True
             )
             
             return {
@@ -193,7 +195,8 @@ class AuthEnumerator:
             # Save results
             filename = f"password_policy_{auth_type}_{ip}.txt"
             file_path = save_enumeration_result(
-                self.output_dir, ip, f'password_policy_{auth_type}', output, filename
+                self.output_dir, ip, f'password_policy_{auth_type}', output, filename,
+                service_type='smb', authenticated=True
             )
             
             return {
@@ -232,7 +235,8 @@ class AuthEnumerator:
             # Save results
             filename = f"winrm_access_{auth_type}_{ip}.txt"
             file_path = save_enumeration_result(
-                self.output_dir, ip, f'winrm_access_{auth_type}', output, filename
+                self.output_dir, ip, f'winrm_access_{auth_type}', output, filename,
+                service_type='misc', authenticated=True
             )
             
             # Check if login was successful
@@ -277,7 +281,8 @@ class AuthEnumerator:
             # Save results
             filename = f"rdp_access_{auth_type}_{ip}.txt"
             file_path = save_enumeration_result(
-                self.output_dir, ip, f'rdp_access_{auth_type}', output, filename
+                self.output_dir, ip, f'rdp_access_{auth_type}', output, filename,
+                service_type='misc', authenticated=True
             )
             
             # Check if login was successful
@@ -317,7 +322,8 @@ class AuthEnumerator:
             # Save results
             filename = f"ldap_user_descriptions_{ip}.txt"
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'ldap_user_descriptions', output, filename
+                self.output_dir, ip, 'ldap_user_descriptions', output, filename,
+                service_type='ldap', authenticated=True
             )
             
             return {
@@ -339,7 +345,8 @@ class AuthEnumerator:
             return None
         
         output_file = f"{self.user}_enumlinux"
-        cmd = ['enum4linux-ng', ip, '-u', self.user, '-p', self.password, '-oY', f"{output_file}.txt"]
+        enum_dir = os.path.join(self.output_dir, "enumeration", "smb", "authenticated")
+        cmd = ['enum4linux-ng', ip, '-u', self.user, '-p', self.password, '-oY', os.path.join(enum_dir, f"{output_file}.txt")]
         
         try:
             self.logger.info(f"Running enum4linux-ng on {ip} with credentials")
@@ -347,8 +354,7 @@ class AuthEnumerator:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=f"{self.output_dir}/enumeration"
+                stderr=asyncio.subprocess.PIPE
             )
             
             stdout, stderr = await process.communicate()
@@ -357,7 +363,8 @@ class AuthEnumerator:
             # Save the command output as well
             filename = f"enum4linux_auth_{ip}.txt"
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'enum4linux_auth', output, filename
+                self.output_dir, ip, 'enum4linux_auth', output, filename,
+                service_type='smb', authenticated=True
             )
             
             return {
@@ -365,7 +372,7 @@ class AuthEnumerator:
                 'command': ' '.join(cmd),
                 'output': output,
                 'file': file_path,
-                'yaml_file': f"{self.output_dir}/enumeration/{output_file}.txt",
+                'yaml_file': f"{enum_dir}/{output_file}.txt",
                 'success': process.returncode == 0
             }
             
@@ -438,7 +445,8 @@ class AuthEnumerator:
         # Save summary to file
         summary_text = "\n".join(summary_lines)
         summary_file = save_enumeration_result(
-            self.output_dir, "summary", "authenticated_enumeration", summary_text, "authenticated_enumeration_summary.txt"
+            self.output_dir, "summary", "authenticated_enumeration", summary_text, "authenticated_enumeration_summary.txt",
+            service_type='misc', authenticated=True
         )
         
         return summary_text

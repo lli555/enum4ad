@@ -68,7 +68,8 @@ class LDAPEnumerator:
             output = stdout.decode() + stderr.decode()
             
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'ldap_basic', output, f"ldap_basic_{ip}.txt"
+                self.output_dir, ip, 'ldap_basic', output, f"ldap_basic_{ip}.txt",
+                service_type='ldap', authenticated=False
             )
             
             return {
@@ -100,7 +101,8 @@ class LDAPEnumerator:
             output = stdout.decode() + stderr.decode()
             
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'ldap_anonymous', output, f"ldap_anonymous_{ip}.txt"
+                self.output_dir, ip, 'ldap_anonymous', output, f"ldap_anonymous_{ip}.txt",
+                service_type='ldap', authenticated=False
             )
             
             return {
@@ -132,7 +134,8 @@ class LDAPEnumerator:
             output = stdout.decode() + stderr.decode()
             
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'ldap_domain', output, f"ldap_domain_{ip}.txt"
+                self.output_dir, ip, 'ldap_domain', output, f"ldap_domain_{ip}.txt",
+                service_type='ldap', authenticated=False
             )
             
             return {
@@ -164,7 +167,8 @@ class LDAPEnumerator:
             output = stdout.decode() + stderr.decode()
             
             file_path = save_enumeration_result(
-                self.output_dir, ip, 'ldap_users', output, f"ldap_users_{ip}.txt"
+                self.output_dir, ip, 'ldap_users', output, f"ldap_users_{ip}.txt",
+                service_type='ldap', authenticated=False
             )
             
             return {
