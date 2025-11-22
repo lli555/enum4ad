@@ -521,7 +521,7 @@ class AuthEnumerator:
     
     async def _bloodhound_collection(self, ip: str) -> Dict:
         """Collect BloodHound data using bloodhound-python"""
-        if not is_command_available('bloodhound-python'):
+        if not self.has_bloodhound:
             self.logger.warning("bloodhound-python not found. Skipping BloodHound collection.")
             return None
         
