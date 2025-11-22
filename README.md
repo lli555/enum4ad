@@ -1,4 +1,4 @@
-# AD Enumeration Tool
+# enum4ad - AD Enumeration Tool
 
 A comprehensive tool for automated Active Directory environment enumeration. This tool provides port scanning, full enumeration, vulnerability assessment, and authenticated enumeration capabilities with service-specific reconnaissance.
 
