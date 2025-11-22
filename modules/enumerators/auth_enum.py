@@ -427,7 +427,7 @@ class AuthEnumerator:
     
     async def _kerberoasting(self, ip: str) -> Dict:
         """Perform Kerberoasting attack using impacket-GetUserSPNs"""
-        if not is_command_available('impacket-GetUserSPNs'):
+        if not self.has_kerberoast:
             self.logger.warning("impacket-GetUserSPNs not found. Skipping Kerberoasting.")
             return None
         
