@@ -33,7 +33,7 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return logger
 
 
-def create_output_directory(base_dir: str, base_path: str = None, scan_mode: str = "full") -> str:
+def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results', scan_mode: str = "full", port_scan_only: bool = False) -> str:  
     """Create output directory with timestamp"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
@@ -41,11 +41,11 @@ def create_output_directory(base_dir: str, base_path: str = None, scan_mode: str
     if scan_mode == "authenticated":
         output_dir_name = f"authenticated_enum_{timestamp}"
     else:
-        output_dir_name = f"{base_dir}_{timestamp}"
+        output_dir_name = f"{path_prefix}_{timestamp}"
     
-    if base_path:
+    if base_dir:
         # Use the provided base path
-        output_dir = os.path.join(base_path, output_dir_name)
+        output_dir = os.path.join(base_dir, output_dir_name)
     else:
         # Use current directory
         output_dir = output_dir_name
@@ -65,22 +65,24 @@ def create_output_directory(base_dir: str, base_path: str = None, scan_mode: str
             # For other scan modes, create full structure
             os.makedirs(os.path.join(output_dir, "nmap"), exist_ok=True)
             
-            # Create main enumeration directory
-            enumeration_dir = os.path.join(output_dir, "enumeration")
-            os.makedirs(enumeration_dir, exist_ok=True)
+            # Create main enumeration directory, only if not port_scan_only
             
-            # Create service-specific directories
-            services = ["ldap", "smb", "web", "vuln", "misc"]
-            auth_types = ["unauthenticated", "authenticated"]
-            
-            for service in services:
-                service_dir = os.path.join(enumeration_dir, service)
-                os.makedirs(service_dir, exist_ok=True)
+            if not port_scan_only:
+                enumeration_dir = os.path.join(output_dir, "enumeration")
+                os.makedirs(enumeration_dir, exist_ok=True)
                 
-                # Create auth subdirectories for each service
-                for auth_type in auth_types:
-                    auth_dir = os.path.join(service_dir, auth_type)
-                    os.makedirs(auth_dir, exist_ok=True)
+                # Create service-specific directories
+                services = ["ldap", "smb", "web", "vuln", "misc"]
+                auth_types = ["unauthenticated", "authenticated"]
+                
+                for service in services:
+                    service_dir = os.path.join(enumeration_dir, service)
+                    os.makedirs(service_dir, exist_ok=True)
+                    
+                    # Create auth subdirectories for each service
+                    for auth_type in auth_types:
+                        auth_dir = os.path.join(service_dir, auth_type)
+                        os.makedirs(auth_dir, exist_ok=True)
         
         return output_dir
     except Exception as e:

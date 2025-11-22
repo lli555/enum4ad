@@ -55,7 +55,10 @@ python3 main.py -f 10.1.1.1,10.1.1.5
 python3 main.py -f 192.168.1.0/24
 
 # Custom output directory
-python3 main.py -f 10.1.1.0/24 -o my_scan_results
+python3 main.py -f 10.1.1.0/24 -o my_scan_results # This will put everything under ./my_scan_results
+
+# Custom output directory + path_prefix
+python3 main.py -f 10.1.1.0/24 -o output --path-prefix cptc # This will put the result under ./output/cptc_20251111_1020312 or something like that, depending on time
 
 # Verbose output
 python3 main.py -f 10.1.1.1 -v
