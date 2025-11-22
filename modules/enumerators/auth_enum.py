@@ -474,7 +474,7 @@ class AuthEnumerator:
     
     async def _asrep_roasting(self, ip: str) -> Dict:
         """Perform AS-REP roasting attack using impacket-GetNPUsers"""
-        if not is_command_available('impacket-GetNPUsers'):
+        if not self.has_asrep:
             self.logger.warning("impacket-GetNPUsers not found. Skipping AS-REP roasting.")
             return None
         
