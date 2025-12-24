@@ -99,6 +99,12 @@ Examples:
     )
     
     parser.add_argument(
+        '-hashes', '--hashes',
+        metavar='NTLM_HASH',
+        help='NTLM hash for authenticated enumeration (format: LM:NT or :NT)'
+    )
+    
+    parser.add_argument(
         '--local-auth',
         action='store_true',
         help='Use local authentication instead of domain authentication'
@@ -120,8 +126,14 @@ async def main():
     
     # Validate credential parameters for authenticated mode
     if args.authenticated:
-        if not args.username or not args.password:
-            print("Error: Both username (-user) and password (-p) are required for authenticated enumeration")
+        if not args.username:
+            print("Error: Username (-user) is required for authenticated enumeration")
+            return 1
+        if not args.password and not args.hashes:
+            print("Error: Either password (-p) or NTLM hash (-hashes) is required for authenticated enumeration")
+            return 1
+        if args.password and args.hashes:
+            print("Error: Cannot use both password (-p) and hash (-hashes) simultaneously")
             return 1
     
     # Setup logging and output directory
@@ -186,7 +198,7 @@ async def main():
             return 1
             
         logger.info(f"Starting authenticated enumeration for {len(ips)} targets")
-        auth_scanner = AuthEnumerator(output_dir, args.username, args.password, args.local_auth)
+        auth_scanner = AuthEnumerator(output_dir, args.username, args.password, args.local_auth, args.hashes)
         results = await auth_scanner.enumerate_targets(ips)
         
         # Generate and display summary

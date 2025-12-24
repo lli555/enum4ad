@@ -14,12 +14,20 @@ from utils import save_enumeration_result, is_command_available
 class AuthEnumerator:
     """Authenticated enumeration using domain/local credentials"""
     
-    def __init__(self, output_dir: str, username: str, password: str, local_auth: bool = False):
+    def __init__(self, output_dir: str, username: str, password: str, local_auth: bool = False, ntlm_hash: str = None):
         self.output_dir = output_dir
         self.username = username
         self.password = password
+        self.ntlm_hash = ntlm_hash
         self.local_auth = local_auth
         self.logger = logging.getLogger('adtool')
+        
+        # Parse NTLM hash if provided
+        if self.ntlm_hash:
+            self.lm_hash, self.nt_hash = self._parse_ntlm_hash(ntlm_hash)
+        else:
+            self.lm_hash = None
+            self.nt_hash = None
         
         # Parse domain and username
         if '/' in username:
@@ -45,6 +53,8 @@ class AuthEnumerator:
         self.has_bloodhound = is_command_available('bloodhound-python')
         
         self.logger.info(f"Initialized authenticated enumerator for user: {self.username}")
+        if self.ntlm_hash:
+            self.logger.info("Using NTLM hash authentication")
         if self.local_auth:
             self.logger.info("Using local authentication")
         else:
@@ -67,6 +77,19 @@ class AuthEnumerator:
             self.logger.info(f"Available tools: {', '.join(tool_status)}")
         else:
             self.logger.warning("No enumeration tools found!")
+    
+    def _parse_ntlm_hash(self, ntlm_hash: str) -> tuple:
+        """Parse NTLM hash in format LM:NT or :NT"""
+        if ':' in ntlm_hash:
+            parts = ntlm_hash.split(':', 1)
+            lm_hash = parts[0] if parts[0] else None
+            nt_hash = parts[1] if parts[1] else None
+        else:
+            # If no colon, assume it's just the NT hash
+            lm_hash = None
+            nt_hash = ntlm_hash
+        
+        return lm_hash, nt_hash
     
     async def enumerate_targets(self, ips: List[str]) -> Dict:
         """Perform authenticated enumeration on targets"""
@@ -189,7 +212,15 @@ class AuthEnumerator:
     
     async def _enumerate_smb_shares(self, ip: str, local_auth: bool = False) -> Dict:
         """Enumerate SMB shares with credentials"""
-        cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user, '-p', self.password, '--shares']
+        cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.ntlm_hash:
+            cmd.extend(['-H', self.ntlm_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        cmd.append('--shares')
         
         if local_auth:
             cmd.append('--local-auth')
@@ -223,7 +254,15 @@ class AuthEnumerator:
     
     async def _check_password_policy(self, ip: str, local_auth: bool = False) -> Dict:
         """Check password policy"""
-        cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user, '-p', self.password, '--pass-pol']
+        cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.ntlm_hash:
+            cmd.extend(['-H', self.ntlm_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        cmd.append('--pass-pol')
         
         if local_auth:
             cmd.append('--local-auth')
@@ -257,7 +296,13 @@ class AuthEnumerator:
     
     async def _check_winrm_access(self, ip: str, local_auth: bool = False) -> Dict:
         """Check WinRM access"""
-        cmd = [self.nxc_cmd, 'winrm', ip, '-u', self.user, '-p', self.password]
+        cmd = [self.nxc_cmd, 'winrm', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.ntlm_hash:
+            cmd.extend(['-H', self.ntlm_hash])
+        else:
+            cmd.extend(['-p', self.password])
         
         if local_auth:
             cmd.append('--local-auth')
@@ -297,7 +342,13 @@ class AuthEnumerator:
     
     async def _check_rdp_access(self, ip: str, local_auth: bool = False) -> Dict:
         """Check RDP access"""
-        cmd = [self.nxc_cmd, 'rdp', ip, '-u', self.user, '-p', self.password]
+        cmd = [self.nxc_cmd, 'rdp', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.ntlm_hash:
+            cmd.extend(['-H', self.ntlm_hash])
+        else:
+            cmd.extend(['-p', self.password])
         
         if local_auth:
             cmd.append('--local-auth')
@@ -337,7 +388,15 @@ class AuthEnumerator:
     
     async def _enumerate_ldap_user_descriptions(self, ip: str) -> Dict:
         """Enumerate LDAP user descriptions"""
-        cmd = [self.nxc_cmd, 'ldap', ip, '-u', self.user, '-p', self.password, '-M', 'get-desc-users']
+        cmd = [self.nxc_cmd, 'ldap', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.ntlm_hash:
+            cmd.extend(['-H', self.ntlm_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        cmd.extend(['-M', 'get-desc-users'])
         
         try:
             self.logger.info(f"Enumerating LDAP user descriptions on {ip}")
@@ -381,7 +440,15 @@ class AuthEnumerator:
             # Simplified directory structure
             enum_dir = os.path.join(self.output_dir, "smb")
         
-        cmd = ['enum4linux-ng', ip, '-u', self.user, '-p', self.password, '-oY', os.path.join(enum_dir, f"{output_file}.txt")]
+        cmd = ['enum4linux-ng', ip, '-u', self.user]
+        
+        # enum4linux-ng uses -p for password and -H for hash
+        if self.ntlm_hash:
+            cmd.extend(['-H', self.nt_hash if self.nt_hash else self.ntlm_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        cmd.extend(['-oY', os.path.join(enum_dir, f"{output_file}.txt")])
         
         try:
             self.logger.info(f"Running enum4linux-ng on {ip} with credentials")
@@ -425,7 +492,11 @@ class AuthEnumerator:
             self.logger.warning("Domain not specified. Skipping Kerberoasting.")
             return None
         
-        cmd = ['impacket-GetUserSPNs', '-request', '-dc-ip', ip, f'{self.domain}/{self.user}:{self.password}']
+        # impacket-GetUserSPNs uses -hashes format LM:NT
+        if self.ntlm_hash:
+            cmd = ['impacket-GetUserSPNs', '-request', '-dc-ip', ip, '-hashes', self.ntlm_hash, f'{self.domain}/{self.user}']
+        else:
+            cmd = ['impacket-GetUserSPNs', '-request', '-dc-ip', ip, f'{self.domain}/{self.user}:{self.password}']
         
         try:
             self.logger.info(f"Performing Kerberoasting on {ip}")
@@ -472,7 +543,11 @@ class AuthEnumerator:
             self.logger.warning("Domain not specified. Skipping AS-REP roasting.")
             return None
         
-        cmd = ['impacket-GetNPUsers', '-request', '-dc-ip', ip, f'{self.domain}/{self.user}:{self.password}']
+        # impacket-GetNPUsers uses -hashes format LM:NT
+        if self.ntlm_hash:
+            cmd = ['impacket-GetNPUsers', '-request', '-dc-ip', ip, '-hashes', self.ntlm_hash, f'{self.domain}/{self.user}']
+        else:
+            cmd = ['impacket-GetNPUsers', '-request', '-dc-ip', ip, f'{self.domain}/{self.user}:{self.password}']
         
         try:
             self.logger.info(f"Performing AS-REP roasting on {ip}")
@@ -526,11 +601,17 @@ class AuthEnumerator:
             'bloodhound-python', 
             '-d', self.domain,
             '-u', self.user,
-            '-p', self.password,
             '-ns', ip,
             '-c', 'all',
             '--zip'
         ]
+        
+        # bloodhound-python uses --hashes for NT hash only
+        if self.ntlm_hash:
+            # BloodHound only needs the NT hash
+            cmd.extend(['--hashes', self.nt_hash if self.nt_hash else self.ntlm_hash])
+        else:
+            cmd.extend(['-p', self.password])
         
         try:
             self.logger.info(f"Collecting BloodHound data from {ip}")
