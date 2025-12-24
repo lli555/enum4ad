@@ -129,7 +129,8 @@ async def main():
     
     # Determine scan mode for directory structure
     scan_mode = "authenticated" if args.authenticated else "full"
-    output_dir = create_output_directory(args.output_dir, args.path_prefix, scan_mode, port_scan_only=(args.portscan is not None))
+    username = args.username if args.authenticated else None
+    output_dir = create_output_directory(args.output_dir, args.path_prefix, scan_mode, port_scan_only=(args.portscan is not None), username=username)
     
     logger.info(f"AD Enumeration Tool started")
     logger.info(f"Output directory: {output_dir}")

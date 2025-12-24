@@ -33,13 +33,19 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return logger
 
 
-def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results', scan_mode: str = "full", port_scan_only: bool = False) -> str:  
+def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results', scan_mode: str = "full", port_scan_only: bool = False, username: str = None) -> str:  
     """Create output directory with timestamp"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Use different directory naming based on scan mode
     if scan_mode == "authenticated":
-        output_dir_name = f"authenticated_enum_{timestamp}"
+        # Include username in directory name for authenticated scans
+        if username:
+            # Sanitize username for directory name (replace / and \ with _)
+            safe_username = username.replace('/', '_').replace('\\', '_')
+            output_dir_name = f"auth_{safe_username}_{timestamp}"
+        else:
+            output_dir_name = f"auth_{timestamp}"
     else:
         output_dir_name = f"{path_prefix}_{timestamp}"
     
