@@ -83,87 +83,70 @@ class AuthEnumerator:
             'results': []
         }
         
-        # Run authenticated enumeration for each IP
-        for ip in ips:
-            self.logger.info(f"Running authenticated enumeration for {ip}")
-            ip_results = await self._enumerate_target(ip)
-            results['results'].append(ip_results)
+        # Run authenticated enumeration for all IPs in parallel
+        self.logger.info(f"Running authenticated enumeration for {len(ips)} targets in parallel")
+        ip_tasks = [self._enumerate_target(ip) for ip in ips]
+        ip_results = await asyncio.gather(*ip_tasks, return_exceptions=True)
+        
+        # Process results
+        for result in ip_results:
+            if result and not isinstance(result, Exception):
+                results['results'].append(result)
+            elif isinstance(result, Exception):
+                self.logger.error(f"Target enumeration failed: {result}")
         
         return results
     
     async def _enumerate_target(self, ip: str) -> Dict:
         """Run all authenticated enumeration checks for a single target"""
+        self.logger.info(f"Starting enumeration for {ip}")
+        
         target_result = {
             'ip': ip,
             'checks': []
         }
         
-        # SMB share enumeration
-        shares_result = await self._enumerate_smb_shares(ip)
-        if shares_result:
-            target_result['checks'].append(shares_result)
+        # Run domain auth checks in parallel
+        domain_checks = [
+            self._enumerate_smb_shares(ip),
+            self._check_password_policy(ip),
+            self._check_winrm_access(ip),
+            self._check_rdp_access(ip),
+            self._enumerate_ldap_user_descriptions(ip),
+            self._run_enum4linux(ip),
+            self._kerberoasting(ip),
+            self._asrep_roasting(ip),
+            self._bloodhound_collection(ip)
+        ]
         
-        # Password policy check
-        passpol_result = await self._check_password_policy(ip)
-        if passpol_result:
-            target_result['checks'].append(passpol_result)
+        # Execute all domain auth checks in parallel
+        domain_results = await asyncio.gather(*domain_checks, return_exceptions=True)
         
-        # WinRM access check
-        winrm_result = await self._check_winrm_access(ip)
-        if winrm_result:
-            target_result['checks'].append(winrm_result)
+        # Add successful results to checks
+        for result in domain_results:
+            if result and not isinstance(result, Exception):
+                target_result['checks'].append(result)
+            elif isinstance(result, Exception):
+                self.logger.error(f"Check failed for {ip}: {result}")
         
-        # RDP access check
-        rdp_result = await self._check_rdp_access(ip)
-        if rdp_result:
-            target_result['checks'].append(rdp_result)
-        
-        # LDAP user description enumeration
-        ldap_users_result = await self._enumerate_ldap_user_descriptions(ip)
-        if ldap_users_result:
-            target_result['checks'].append(ldap_users_result)
-        
-        # enum4linux-ng enumeration
-        enum4linux_result = await self._run_enum4linux(ip)
-        if enum4linux_result:
-            target_result['checks'].append(enum4linux_result)
-        
-        # Kerberoasting attack
-        kerberoast_result = await self._kerberoasting(ip)
-        if kerberoast_result:
-            target_result['checks'].append(kerberoast_result)
-        
-        # AS-REP roasting attack
-        asrep_result = await self._asrep_roasting(ip)
-        if asrep_result:
-            target_result['checks'].append(asrep_result)
-        
-        # BloodHound data collection
-        bloodhound_result = await self._bloodhound_collection(ip)
-        if bloodhound_result:
-            target_result['checks'].append(bloodhound_result)
-        
-        # If local_auth is enabled, run all checks again with --local-auth
+        # If local_auth is enabled, run local auth checks in parallel
         if self.local_auth:
-            # SMB shares with local auth
-            shares_local_result = await self._enumerate_smb_shares(ip, local_auth=True)
-            if shares_local_result:
-                target_result['checks'].append(shares_local_result)
+            local_checks = [
+                self._enumerate_smb_shares(ip, local_auth=True),
+                self._check_password_policy(ip, local_auth=True),
+                self._check_winrm_access(ip, local_auth=True),
+                self._check_rdp_access(ip, local_auth=True)
+            ]
             
-            # Password policy with local auth
-            passpol_local_result = await self._check_password_policy(ip, local_auth=True)
-            if passpol_local_result:
-                target_result['checks'].append(passpol_local_result)
+            # Execute all local auth checks in parallel
+            local_results = await asyncio.gather(*local_checks, return_exceptions=True)
             
-            # WinRM with local auth
-            winrm_local_result = await self._check_winrm_access(ip, local_auth=True)
-            if winrm_local_result:
-                target_result['checks'].append(winrm_local_result)
-            
-            # RDP with local auth
-            rdp_local_result = await self._check_rdp_access(ip, local_auth=True)
-            if rdp_local_result:
-                target_result['checks'].append(rdp_local_result)
+            # Add successful results to checks
+            for result in local_results:
+                if result and not isinstance(result, Exception):
+                    target_result['checks'].append(result)
+                elif isinstance(result, Exception):
+                    self.logger.error(f"Local auth check failed for {ip}: {result}")
         
         return target_result
     
