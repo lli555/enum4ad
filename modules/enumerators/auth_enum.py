@@ -444,7 +444,7 @@ class AuthEnumerator:
         
         # enum4linux-ng uses -p for password and -H for hash
         if self.ntlm_hash:
-            cmd.extend(['-H', self.nt_hash if self.nt_hash else self.ntlm_hash])
+            cmd.extend(['-H', self.nt_hash])
         else:
             cmd.extend(['-p', self.password])
         
@@ -609,7 +609,7 @@ class AuthEnumerator:
         # bloodhound-python uses --hashes for NT hash only
         if self.ntlm_hash:
             # BloodHound only needs the NT hash
-            cmd.extend(['--hashes', self.nt_hash if self.nt_hash else self.ntlm_hash])
+            cmd.extend(['--hashes', self.ntlm_hash])
         else:
             cmd.extend(['-p', self.password])
         
