@@ -229,6 +229,7 @@ class AuthEnumerator:
         
         try:
             self.logger.info(f"Enumerating SMB shares on {ip} ({auth_type} auth)")
+            self.logger.info(f"cmd: {' '.join(cmd)}")
             
             stdout, stderr, returncode = await self._run_nxc_command(cmd)
             output = stdout + stderr
@@ -452,6 +453,7 @@ class AuthEnumerator:
         
         try:
             self.logger.info(f"Running enum4linux-ng on {ip} with credentials")
+            self.logger.info(f"cmd: {' '.join(cmd)}")
             
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -500,6 +502,7 @@ class AuthEnumerator:
         
         try:
             self.logger.info(f"Performing Kerberoasting on {ip}")
+            self.logger.info(f"cmd: {' '.join(cmd)}")
             
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -614,6 +617,7 @@ class AuthEnumerator:
             cmd.extend(['-p', self.password])
         
         try:
+            self.logger.info(f"cmd: {' '.join(cmd)}")
             self.logger.info(f"Collecting BloodHound data from {ip}")
             
             process = await asyncio.create_subprocess_exec(
