@@ -33,13 +33,19 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return logger
 
 
-def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results', scan_mode: str = "full", port_scan_only: bool = False) -> str:  
+def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results', scan_mode: str = "full", port_scan_only: bool = False, username: str = None) -> str:  
     """Create output directory with timestamp"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Use different directory naming based on scan mode
     if scan_mode == "authenticated":
-        output_dir_name = f"authenticated_enum_{timestamp}"
+        # Include username in directory name for authenticated scans
+        if username:
+            # Sanitize username for directory name (replace / and \ with _)
+            safe_username = username.replace('/', '_').replace('\\', '_')
+            output_dir_name = f"auth_{safe_username}_{timestamp}"
+        else:
+            output_dir_name = f"auth_{timestamp}"
     else:
         output_dir_name = f"{path_prefix}_{timestamp}"
     
@@ -56,7 +62,7 @@ def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results',
         if scan_mode == "authenticated":
             # For authenticated scans, create minimal structure
             # Only create directories that will actually be used
-            services = ["ldap", "smb", "misc"]  # Only services used in auth enum
+            services = ["ldap", "smb", "misc", "bloodhound"]  # Added bloodhound directory
             
             for service in services:
                 service_dir = os.path.join(output_dir, service)
@@ -71,11 +77,11 @@ def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results',
                 enumeration_dir = os.path.join(output_dir, "enumeration")
                 os.makedirs(enumeration_dir, exist_ok=True)
                 
-                # Create service-specific directories
-                services = ["ldap", "smb", "web", "vuln", "misc"]
-                auth_types = ["unauthenticated", "authenticated"]
-                
-                for service in services:
+            # Create service-specific directories
+            services = ["ldap", "smb", "web", "vuln", "misc", "bloodhound"]
+            auth_types = ["unauthenticated", "authenticated"]
+            
+            for service in services:
                     service_dir = os.path.join(enumeration_dir, service)
                     os.makedirs(service_dir, exist_ok=True)
                     
@@ -236,6 +242,8 @@ def save_enumeration_result(output_dir: str, ip: str, service: str, data: str, f
             service_type = 'web'
         elif 'vuln' in service_lower or 'vulnerability' in service_lower:
             service_type = 'vuln'
+        elif 'bloodhound' in service_lower:
+            service_type = 'bloodhound'
         else:
             service_type = 'misc'
     

