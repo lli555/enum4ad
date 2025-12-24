@@ -6,6 +6,7 @@ import asyncio
 import subprocess
 import logging
 import os
+import random
 from typing import Dict, List, Optional
 from utils import save_enumeration_result, is_command_available
 
@@ -150,6 +151,42 @@ class AuthEnumerator:
         
         return target_result
     
+    async def _run_nxc_command(self, cmd: List[str], max_retries: int = 3) -> tuple:
+        """Run nxc command with retry logic to handle parallel execution issues"""
+        for attempt in range(max_retries):
+            try:
+                # Add small random delay to stagger parallel processes
+                if attempt > 0:
+                    delay = random.uniform(0.1, 0.5)
+                    await asyncio.sleep(delay)
+                
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await process.communicate()
+                
+                # Check if it's the FileExistsError from nxc
+                if b"FileExistsError" in stderr and b"nxc_hosted" in stderr:
+                    if attempt < max_retries - 1:
+                        self.logger.debug(f"nxc temporary directory conflict, retrying... (attempt {attempt + 1}/{max_retries})")
+                        continue
+                
+                return stdout.decode(), stderr.decode(), process.returncode
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    self.logger.debug(f"Command execution error, retrying... (attempt {attempt + 1}/{max_retries}): {e}")
+                    continue
+                else:
+                    raise
+        
+        # If all retries failed
+        raise Exception(f"Failed to execute command after {max_retries} attempts")
+
+    
     async def _enumerate_smb_shares(self, ip: str, local_auth: bool = False) -> Dict:
         """Enumerate SMB shares with credentials"""
         cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user, '-p', self.password, '--shares']
@@ -162,14 +199,8 @@ class AuthEnumerator:
         try:
             self.logger.info(f"Enumerating SMB shares on {ip} ({auth_type} auth)")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"smb_shares_{auth_type}_{ip}.txt"
@@ -183,7 +214,7 @@ class AuthEnumerator:
                 'command': ' '.join(cmd),
                 'output': output,
                 'file': file_path,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -202,14 +233,8 @@ class AuthEnumerator:
         try:
             self.logger.info(f"Checking password policy on {ip} ({auth_type} auth)")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"password_policy_{auth_type}_{ip}.txt"
@@ -223,7 +248,7 @@ class AuthEnumerator:
                 'command': ' '.join(cmd),
                 'output': output,
                 'file': file_path,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -242,14 +267,8 @@ class AuthEnumerator:
         try:
             self.logger.info(f"Checking WinRM access on {ip} ({auth_type} auth)")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"winrm_access_{auth_type}_{ip}.txt"
@@ -269,7 +288,7 @@ class AuthEnumerator:
                 'output': output,
                 'file': file_path,
                 'login_success': login_success,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -288,14 +307,8 @@ class AuthEnumerator:
         try:
             self.logger.info(f"Checking RDP access on {ip} ({auth_type} auth)")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"rdp_access_{auth_type}_{ip}.txt"
@@ -315,7 +328,7 @@ class AuthEnumerator:
                 'output': output,
                 'file': file_path,
                 'login_success': login_success,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
@@ -329,14 +342,8 @@ class AuthEnumerator:
         try:
             self.logger.info(f"Enumerating LDAP user descriptions on {ip}")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            output = stdout.decode() + stderr.decode()
+            stdout, stderr, returncode = await self._run_nxc_command(cmd)
+            output = stdout + stderr
             
             # Save results
             filename = f"ldap_user_descriptions_{ip}.txt"
@@ -350,7 +357,7 @@ class AuthEnumerator:
                 'command': ' '.join(cmd),
                 'output': output,
                 'file': file_path,
-                'success': process.returncode == 0
+                'success': returncode == 0
             }
             
         except Exception as e:
