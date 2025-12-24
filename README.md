@@ -1,4 +1,4 @@
-# AD Enumeration Tool
+# enum4ad - AD Enumeration Tool
 
 A comprehensive tool for automated Active Directory environment enumeration. This tool provides port scanning, full enumeration, vulnerability assessment, and authenticated enumeration capabilities with service-specific reconnaissance.
 
@@ -451,3 +451,12 @@ Feel free to submit issues and enhancement requests. Contributions are welcome f
 3. **Empty BloodHound directory**: Check if bloodhound-python completed successfully in verbose output
 4. **No Kerberoastable accounts**: This is normal if no service accounts with SPNs exist
 5. **No AS-REP roastable accounts**: This is normal if all accounts require Kerberos pre-authentication
+4. **Network unreachable**: Check network connectivity and firewall rules
+5. **enum4linux-ng not found**: Install using `pip3 install enum4linux-ng`
+6. **Authentication failures**: Verify credentials and ensure target systems allow the authentication method (domain vs local)
+7. **Vulnerability modules not working**: Ensure you have the latest version of netexec/nxc with updated modules
+
+### Common Issues
+- **False positives in vulnerability scans**: Review individual module outputs for context
+- **Timeouts on large networks**: Reduce thread count with `-t` parameter or scan smaller subnets
+- **Missing results**: Check verbose output (`-v`) for detailed error messages
