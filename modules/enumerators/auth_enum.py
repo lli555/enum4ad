@@ -215,8 +215,8 @@ class AuthEnumerator:
         cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user]
         
         # Use hash or password
-        if self.ntlm_hash:
-            cmd.extend(['-H', self.ntlm_hash])
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
         else:
             cmd.extend(['-p', self.password])
         
@@ -258,8 +258,8 @@ class AuthEnumerator:
         cmd = [self.nxc_cmd, 'smb', ip, '-u', self.user]
         
         # Use hash or password
-        if self.ntlm_hash:
-            cmd.extend(['-H', self.ntlm_hash])
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
         else:
             cmd.extend(['-p', self.password])
         
@@ -300,8 +300,8 @@ class AuthEnumerator:
         cmd = [self.nxc_cmd, 'winrm', ip, '-u', self.user]
         
         # Use hash or password
-        if self.ntlm_hash:
-            cmd.extend(['-H', self.ntlm_hash])
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
         else:
             cmd.extend(['-p', self.password])
         
@@ -346,8 +346,8 @@ class AuthEnumerator:
         cmd = [self.nxc_cmd, 'rdp', ip, '-u', self.user]
         
         # Use hash or password
-        if self.ntlm_hash:
-            cmd.extend(['-H', self.ntlm_hash])
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
         else:
             cmd.extend(['-p', self.password])
         
@@ -392,8 +392,8 @@ class AuthEnumerator:
         cmd = [self.nxc_cmd, 'ldap', ip, '-u', self.user]
         
         # Use hash or password
-        if self.ntlm_hash:
-            cmd.extend(['-H', self.ntlm_hash])
+        if self.nt_hash:
+            cmd.extend(['-H', self.nt_hash])
         else:
             cmd.extend(['-p', self.password])
         
@@ -444,7 +444,7 @@ class AuthEnumerator:
         cmd = ['enum4linux-ng', ip, '-u', self.user]
         
         # enum4linux-ng uses -p for password and -H for hash
-        if self.ntlm_hash:
+        if self.nt_hash:
             cmd.extend(['-H', self.nt_hash])
         else:
             cmd.extend(['-p', self.password])
