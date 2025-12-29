@@ -229,7 +229,7 @@ ad_enum_results_YYYYMMDD_HHMMSS/
 When scanning CIDR ranges, the tool automatically performs host discovery before detailed port scanning:
 
 #### Without -AD Flag (Standard Host Discovery)
-1. Runs `nmap -v -sn {ip_range} -oG live_hosts.txt` for each CIDR range
+1. Runs `nmap -v -sn {ip_range} -oG live_hosts_{ip_range_sanitized}.txt` for each CIDR range (e.g. `live_hosts_10.0.0.0_24.txt`)
 2. Extracts and displays all live hosts
 3. Performs detailed nmap scans only on live hosts
 4. Organizes results by subnet in separate folders
