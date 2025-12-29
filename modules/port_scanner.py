@@ -16,13 +16,14 @@ from utils import parse_nmap_output, get_service_type
 class PortScanner:
     """Port scanner using nmap"""
     
-    def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False, ad_only: bool = False):
+    def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False, ad_only: bool = False, full_enum_mode: bool = False):
         self.output_dir = output_dir
         self.max_concurrent = max_concurrent
         self.logger = logging.getLogger('adtool')
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.use_rustscan = use_rustscan
         self.ad_only = ad_only
+        self.full_enum_mode = full_enum_mode  # True for -f mode, False for -ps mode
     
     async def scan_target(self, ip: str, subnet: str = None) -> Dict:
         """Scan a single target with nmap"""
@@ -45,19 +46,42 @@ class PortScanner:
             if self.use_rustscan:
                 # rustscan will call nmap with the provided args after --
                 rustscan_bin = shutil.which('rustscan') or 'rustscan'
-                nmap_args = ['-Pn', '-n', '-sC', '-sV', '-oN', output_file]
-                cmd = [rustscan_bin, '-a', ip, '-r', '1-65535', '-u', '5000', '--'] + nmap_args
+                if self.full_enum_mode:
+                    # Full enumeration mode: aggressive port discovery
+                    nmap_args = ['-Pn', '-n', '-sC', '-sV', '-oN', output_file]
+                    cmd = [rustscan_bin, '-a', ip, '-r', '1-65535', '-u', '5000', '--'] + nmap_args
+                else:
+                    # Port scan only mode: standard rustscan
+                    nmap_args = ['-Pn', '-n', '-sC', '-sV', '-oN', output_file]
+                    cmd = [rustscan_bin, '-a', ip, '-r', '1-65535', '-u', '5000', '--'] + nmap_args
             else:
-                cmd = [
-                    'nmap',
-                    '-Pn',      # Skip host discovery
-                    '-n',       # No DNS resolution
-                    '-sC',      # Default scripts
-                    '-sV',      # Version detection
-                    '-oN',      # Normal output
-                    output_file,
-                    ip
-                ]
+                if self.full_enum_mode:
+                    # Full enumeration mode: scan all ports with aggressive timing
+                    # nmap {ip or ip ranges} -p- -T4 --open -n -Pn -sS
+                    cmd = [
+                        'nmap',
+                        ip,
+                        '-p-',      # Scan all 65535 ports
+                        '-T4',      # Aggressive timing
+                        '--open',   # Show only open ports
+                        '-n',       # No DNS resolution
+                        '-Pn',      # Skip host discovery
+                        '-sS',      # SYN scan (stealth scan)
+                        '-oN',      # Normal output
+                        output_file
+                    ]
+                else:
+                    # Port scan only mode: standard scan with scripts and version detection
+                    cmd = [
+                        'nmap',
+                        '-Pn',      # Skip host discovery
+                        '-n',       # No DNS resolution
+                        '-sC',      # Default scripts
+                        '-sV',      # Version detection
+                        '-oN',      # Normal output
+                        output_file,
+                        ip
+                    ]
             
             self.logger.info(f"Scanning {ip}...")
             

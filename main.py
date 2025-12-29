@@ -149,7 +149,10 @@ async def main():
     # Determine scan mode for directory structure
     scan_mode = "authenticated" if args.authenticated else "full"
     username = args.username if args.authenticated else None
-    output_dir = create_output_directory(args.output_dir, args.path_prefix, scan_mode, port_scan_only=(args.portscan is not None), username=username)
+    # For full enumeration mode, we create per-IP directories, so don't create top-level enumeration structure
+    # Only port_scan_only and full enumeration should skip the top-level enumeration directory
+    skip_top_level_enum = (args.portscan is not None) or (args.full is not None)
+    output_dir = create_output_directory(args.output_dir, args.path_prefix, scan_mode, port_scan_only=skip_top_level_enum, username=username)
     
     logger.info(f"AD Enumeration Tool started")
     logger.info(f"Output directory: {output_dir}")
