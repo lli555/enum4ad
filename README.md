@@ -5,6 +5,9 @@ A comprehensive tool for automated Active Directory environment enumeration. Thi
 ## Features
 
 - **Port Scanning**: Fast port scanning with nmap or RustScan support
+  - Automatic host discovery for CIDR ranges using `nmap -sn`
+  - Windows/AD host filtering with NetExec using `-AD` flag
+  - Subnet-organized output folders for better organization
 - **Full Enumeration**: Complete automated enumeration based on discovered services
 - **Vulnerability Scanning**: SMB vulnerability testing using NetExec modules
 - **Authenticated Enumeration**: Credential-based enumeration for deeper access assessment
@@ -51,7 +54,25 @@ python3 main.py -ps 10.1.1.1,10.1.1.2
 
 # Fast RustScan mode (requires rustscan installation)
 python3 main.py -ps 10.1.1.1,10.1.1.2 --rustscan
+
+# Scan CIDR range with automatic host discovery
+python3 main.py -ps 10.0.0.0/24
+
+# Scan multiple subnets (automatically discovers live hosts)
+python3 main.py -ps 10.0.0.0/24,10.0.200.0/24
+
+# Windows/AD hosts only (uses NetExec for host discovery)
+python3 main.py -ps 10.0.0.0/24 -AD
+
+# Multiple subnets, Windows hosts only
+python3 main.py -ps 10.0.0.0/24,192.168.1.0/24 -AD
 ```
+
+**Host Discovery Behavior:**
+- **Individual IPs** (`10.1.1.1,10.1.1.2`): Direct port scanning, no host discovery
+- **CIDR ranges** (`10.0.0.0/24`): Automatic host discovery with `nmap -sn`, then port scan live hosts
+- **CIDR with -AD flag** (`10.0.0.0/24 -AD`): NetExec SMB scan to find only Windows hosts, then port scan
+- **Mixed input**: Handles both individual IPs and CIDR ranges appropriately
 
 ### Full Enumeration
 Complete enumeration including port scanning and service-specific enumeration:
@@ -59,8 +80,11 @@ Complete enumeration including port scanning and service-specific enumeration:
 # Single IPs
 python3 main.py -f 10.1.1.1,10.1.1.5
 
-# CIDR notation
+# CIDR notation with automatic host discovery
 python3 main.py -f 192.168.1.0/24
+
+# Windows/AD hosts only
+python3 main.py -f 10.0.0.0/24 -AD
 
 # Custom output directory
 python3 main.py -f 10.1.1.0/24 -o my_scan_results
@@ -76,6 +100,9 @@ python3 main.py -f 10.1.1.0/24 -t 20
 
 # Use RustScan for faster port discovery
 python3 main.py -f 192.168.1.0/24 --rustscan
+
+# Full enumeration on Windows hosts only with RustScan
+python3 main.py -f 192.168.1.0/24 -AD --rustscan
 ```
 
 ### Vulnerability Scanning
@@ -131,14 +158,46 @@ python3 main.py -auth 10.1.1.1,10.1.1.2 -user CONTOSO/john.doe -p ComplexPass202
 
 ### Port Scanning Options
 - `--rustscan`: Use RustScan for faster port scanning (requires rustscan to be installed)
+- `-AD, --ad-only`: Only scan Windows/AD hosts (uses NetExec to identify Windows systems)
 
 ## Output Structure
 
+### Standard Port Scan Output (Individual IPs)
+```
+ad_enum_results_YYYYMMDD_HHMMSS/
+└── nmap/
+    └── individual_ips/
+        ├── nmap_10.1.1.1.txt
+        └── nmap_10.1.1.2.txt
+```
+
+### Subnet-Based Output (CIDR Ranges)
+When scanning CIDR ranges, nmap results are organized by subnet:
 ```
 ad_enum_results_YYYYMMDD_HHMMSS/
 ├── nmap/
-│   ├── nmap_10.1.1.1.txt
-│   └── nmap_10.1.1.2.txt
+│   ├── 10.0.0.0_24/           # Subnet folder
+│   │   ├── nmap_10.0.0.1.txt
+│   │   ├── nmap_10.0.0.5.txt
+│   │   └── nmap_10.0.0.10.txt
+│   └── 10.0.200.0_24/         # Another subnet folder
+│       ├── nmap_10.0.200.1.txt
+│       └── nmap_10.0.200.15.txt
+├── live_hosts.txt              # Host discovery results (if CIDR used)
+└── netexec_smb.txt            # NetExec output (if -AD flag used)
+```
+
+### Full Enumeration Output
+```
+ad_enum_results_YYYYMMDD_HHMMSS/
+├── nmap/
+│   ├── 192.168.1.0_24/        # Organized by subnet
+│   │   ├── nmap_192.168.1.10.txt
+│   │   └── nmap_192.168.1.20.txt
+│   └── individual_ips/         # Individual IPs (if any)
+│       └── nmap_10.1.1.1.txt
+├── live_hosts.txt
+├── netexec_smb.txt            # If -AD flag used
 ├── enumeration/
 │   ├── smb_shares_10.1.1.1.txt
 │   ├── ldap_basic_10.1.1.1.txt
@@ -163,6 +222,50 @@ ad_enum_results_YYYYMMDD_HHMMSS/
 ```
 
 ## Service Enumeration
+
+### Automatic Host Discovery
+
+When scanning CIDR ranges, the tool automatically performs host discovery before detailed port scanning:
+
+#### Without -AD Flag (Standard Host Discovery)
+1. Runs `nmap -v -sn {ip_range} -oG live_hosts.txt` for each CIDR range
+2. Extracts and displays all live hosts
+3. Performs detailed nmap scans only on live hosts
+4. Organizes results by subnet in separate folders
+
+Example workflow for `10.0.0.0/24,10.0.200.0/24`:
+```
+[*] Performing host discovery on 10.0.0.0/24...
+[*] Performing host discovery on 10.0.200.0/24...
+[*] Live hosts (15):
+  - 10.0.0.1
+  - 10.0.0.5
+  - 10.0.200.10
+  ...
+[*] Starting nmap scans for 15 targets
+```
+
+#### With -AD Flag (Windows Host Discovery)
+1. Runs `netexec smb {ip_range}` directly for each CIDR range
+2. Identifies and displays only Windows/AD hosts
+3. Saves complete NetExec output to `netexec_smb.txt`
+4. Performs detailed nmap scans only on Windows hosts
+5. Organizes results by subnet in separate folders
+
+Example workflow for `10.0.0.0/24 -AD`:
+```
+[*] CIDR notation detected with -AD flag, using NetExec to find Windows hosts...
+[*] Discovering Windows/AD hosts using NetExec...
+[*] NetExec output saved to netexec_smb.txt
+[*] NetExec scan complete: 8 hosts found
+[*] Starting nmap scans for 8 targets
+```
+
+**Benefits:**
+- **Faster scans**: Only scans live/Windows hosts instead of entire subnet
+- **Better organization**: Results organized by subnet in separate folders
+- **Reduced noise**: Skip offline systems or non-Windows hosts when using -AD
+- **Detailed logs**: Saves host discovery results (`live_hosts.txt` or `netexec_smb.txt`)
 
 ### SMB/NetBIOS
 - Anonymous share enumeration
@@ -334,12 +437,29 @@ sudo dpkg -i rustscan_2.1.1_amd64.deb
 
 ### Basic Port Scan
 ```bash
+# Individual IPs
 python3 main.py -ps 192.168.1.10,192.168.1.20
+
+# CIDR range with automatic host discovery
+python3 main.py -ps 10.0.0.0/24
+
+# Windows/AD hosts only
+python3 main.py -ps 10.0.0.0/24 -AD
+
+# Multiple subnets
+python3 main.py -ps 10.0.0.0/24,10.0.200.0/24 -AD
 ```
 
 ### Full Network Enumeration
 ```bash
+# CIDR range with automatic host discovery
 python3 main.py -f 192.168.1.0/24 -o domain_scan -v
+
+# Windows/AD hosts only
+python3 main.py -f 192.168.1.0/24 -AD -o ad_scan -v
+
+# Multiple subnets, Windows only
+python3 main.py -f 10.0.0.0/24,192.168.1.0/24 -AD --rustscan
 ```
 
 ### Targeted Full Enumeration
