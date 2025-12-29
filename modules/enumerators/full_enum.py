@@ -18,8 +18,6 @@ class FullEnumerator:
     def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False, ad_only: bool = False):
         self.output_dir = output_dir
         self.logger = logging.getLogger('adtool')
-        self.use_rustscan = use_rustscan
-        self.ad_only = ad_only
         
         # Initialize port scanner
         self.port_scanner = PortScanner(output_dir, max_concurrent, use_rustscan=use_rustscan, ad_only=ad_only)
