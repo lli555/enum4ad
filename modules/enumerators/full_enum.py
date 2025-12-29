@@ -170,7 +170,7 @@ class FullEnumerator:
         """
         # Sanitize IP for directory name (replace dots with underscores)
         safe_ip = ip.replace('.', '_').replace(':', '_')
-        ip_dir = os.path.join(self.output_dir, f"target_{safe_ip}")
+        ip_dir = os.path.join(self.output_dir, safe_ip)
         
         try:
             os.makedirs(ip_dir, exist_ok=True)
