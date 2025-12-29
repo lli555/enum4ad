@@ -128,8 +128,8 @@ def validate_ips(ip_input: str, expand_cidr: bool = False) -> List[str]:
                         # For larger networks, include all IPs
                         ips.extend([str(ip) for ip in network])
                 else:
-                    # Keep CIDR as-is for nmap/netexec
-                    ips.append(ip_part)
+                    # Keep CIDR (canonical form) for nmap/netexec
+                    ips.append(str(network))
             else:
                 # Validate and add single IP address
                 ipaddress.ip_address(ip_part)
