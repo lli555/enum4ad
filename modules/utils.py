@@ -97,8 +97,9 @@ def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results',
 
 def validate_ips(ip_input: str) -> List[str]:
     """
-    Validate and expand IP addresses from input string
+    Validate IP addresses and CIDR ranges from input string
     Supports individual IPs, comma-separated IPs, and CIDR notation
+    Returns list of valid IPs/CIDR ranges (does NOT expand CIDR ranges)
     """
     ips = []
     
@@ -112,17 +113,13 @@ def validate_ips(ip_input: str) -> List[str]:
         try:
             # Check if it's CIDR notation
             if '/' in ip_part:
-                network = ipaddress.ip_network(ip_part, strict=False)
-                # Convert network to list of IPs (skip network and broadcast for /24 and smaller)
-                if network.prefixlen >= 24:
-                    ips.extend([str(ip) for ip in network.hosts()])
-                else:
-                    # For larger networks, include all IPs
-                    ips.extend([str(ip) for ip in network])
+                # Validate CIDR notation but don't expand it
+                ipaddress.ip_network(ip_part, strict=False)
+                ips.append(ip_part)
             else:
-                # Single IP address
-                ip = ipaddress.ip_address(ip_part)
-                ips.append(str(ip))
+                # Validate single IP address
+                ipaddress.ip_address(ip_part)
+                ips.append(ip_part)
                 
         except ValueError:
             logger = logging.getLogger('adtool')
@@ -132,6 +129,12 @@ def validate_ips(ip_input: str) -> List[str]:
     # Remove duplicates while preserving order
     unique_ips = list(dict.fromkeys(ips))
     return unique_ips
+
+
+def has_cidr_notation(ip_input: str) -> bool:
+    """Check if the input contains any CIDR notation"""
+    ip_parts = [ip.strip() for ip in ip_input.split(',')]
+    return any('/' in ip_part for ip_part in ip_parts if ip_part)
 
 
 def parse_nmap_output(file_path: str) -> dict:

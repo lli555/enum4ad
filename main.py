@@ -117,6 +117,13 @@ Examples:
         help='Use RustScan for faster port scanning (default: disabled).'
     )
     
+    parser.add_argument(
+        '-AD', '--ad-only',
+        action='store_true',
+        dest='ad_only',
+        help='Only scan Windows/AD hosts (uses NetExec to identify Windows systems)'
+    )
+    
     return parser.parse_args()
 
 
@@ -156,8 +163,8 @@ async def main():
             
         logger.info(f"Starting port scan for {len(ips)} targets")
         # If --rustscan provided, use rustscan
-        scanner = PortScanner(output_dir, args.threads, use_rustscan=args.rustscan)
-        results = await scanner.scan_targets(ips)
+        scanner = PortScanner(output_dir, args.threads, use_rustscan=args.rustscan, ad_only=args.ad_only)
+        results = await scanner.scan_targets(ips, ip_input=args.portscan)
         
         logger.info(f"Port scan completed. Results saved to {output_dir}")
         
@@ -168,8 +175,8 @@ async def main():
             return 1
             
         logger.info(f"Starting full enumeration for {len(ips)} targets")
-        enumerator = FullEnumerator(output_dir, args.threads, use_rustscan=args.rustscan)
-        results = await enumerator.enumerate_targets(ips)
+        enumerator = FullEnumerator(output_dir, args.threads, use_rustscan=args.rustscan, ad_only=args.ad_only)
+        results = await enumerator.enumerate_targets(ips, ip_input=args.full)
         
         logger.info(f"Full enumeration completed. Results saved to {output_dir}")
         

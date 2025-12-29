@@ -7,6 +7,8 @@ import subprocess
 import os
 import logging
 import shutil
+import re
+import ipaddress
 from typing import List, Dict
 from utils import parse_nmap_output, get_service_type
 
@@ -14,12 +16,13 @@ from utils import parse_nmap_output, get_service_type
 class PortScanner:
     """Port scanner using nmap"""
     
-    def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False):
+    def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False, ad_only: bool = False):
         self.output_dir = output_dir
         self.max_concurrent = max_concurrent
         self.logger = logging.getLogger('adtool')
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.use_rustscan = use_rustscan
+        self.ad_only = ad_only
     
     async def scan_target(self, ip: str) -> Dict:
         """Scan a single target with nmap"""
@@ -83,12 +86,174 @@ class PortScanner:
                 self.logger.error(f"Error scanning {ip}: {e}")
                 return {'ip': ip, 'success': False, 'error': str(e)}
     
-    async def scan_targets(self, ips: List[str]) -> List[Dict]:
-        """Scan multiple targets concurrently"""
-        self.logger.info(f"Starting nmap scans for {len(ips)} targets")
+    async def perform_host_discovery(self, ip_range: str) -> List[str]:
+        """
+        Perform host discovery using nmap -sn to identify live hosts
+        Returns list of IPs that are up
+        """
+        self.logger.info(f"Performing host discovery on {ip_range}...")
+        
+        output_file = os.path.join(self.output_dir, "live_hosts.txt")
+        
+        cmd = [
+            'nmap',
+            '-v',
+            '-sn',      # Ping scan - disable port scan
+            ip_range,
+            '-oG',      # Grepable output
+            output_file
+        ]
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                self.logger.error(f"Host discovery failed: {stderr.decode()}")
+                return []
+            
+            # Parse the grepable output to extract live hosts
+            live_hosts = []
+            if os.path.exists(output_file):
+                with open(output_file, 'r') as f:
+                    for line in f:
+                        # Look for lines with "Status: Up"
+                        if 'Status: Up' in line:
+                            # Extract IP address - format: Host: IP (hostname) Status: Up
+                            match = re.search(r'Host:\s+(\S+)', line)
+                            if match:
+                                ip = match.group(1)
+                                # Filter out non-IP entries (like hostnames without IPs)
+                                try:
+                                    ipaddress.ip_address(ip)
+                                    live_hosts.append(ip)
+                                except ValueError:
+                                    continue
+            
+            self.logger.info(f"Host discovery complete: {len(live_hosts)} live hosts found")
+            return live_hosts
+            
+        except Exception as e:
+            self.logger.error(f"Error during host discovery: {e}")
+            return []
+    
+    async def filter_windows_hosts(self, ips: List[str]) -> List[str]:
+        """
+        Filter for Windows hosts using NetExec
+        Returns list of IPs that are Windows systems
+        """
+        if not ips:
+            return []
+        
+        self.logger.info(f"Filtering for Windows/AD hosts using NetExec...")
+        
+        # Create a single IP range or comma-separated list for netexec
+        ip_list = ','.join(ips)
+        
+        output_file = os.path.join(self.output_dir, "windows_hosts.txt")
+        
+        cmd = [
+            'netexec',
+            'smb',
+            ip_list,
+            '--log',
+            output_file
+        ]
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            # Parse output to find Windows hosts
+            # NetExec shows Windows hosts with format like: SMB  10.0.0.1  445  HOSTNAME  [*] Windows...
+            windows_hosts = []
+            output = stdout.decode()
+            
+            for line in output.split('\n'):
+                if 'Windows' in line or 'SMB' in line:
+                    # Extract IP from the line
+                    match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
+                    if match:
+                        ip = match.group(1)
+                        if ip not in windows_hosts:
+                            windows_hosts.append(ip)
+            
+            self.logger.info(f"Windows host filtering complete: {len(windows_hosts)} Windows hosts found")
+            return windows_hosts
+            
+        except FileNotFoundError:
+            self.logger.error("NetExec not found. Please install NetExec to use -AD flag.")
+            self.logger.info("Install with: pipx install git+https://github.com/Pennyw0rth/NetExec")
+            return ips  # Return all IPs if NetExec is not available
+        except Exception as e:
+            self.logger.error(f"Error during Windows host filtering: {e}")
+            return ips  # Return all IPs on error
+    
+    async def scan_targets(self, ips: List[str], ip_input: str = None) -> List[Dict]:
+        """
+        Scan multiple targets concurrently
+        If ip_input contains CIDR notation, perform host discovery first
+        ips can be a mix of individual IPs and CIDR ranges
+        """
+        # Import here to avoid circular import
+        from utils import has_cidr_notation
+        
+        targets_to_scan = ips
+        
+        # Check if we should perform host discovery (only for CIDR ranges)
+        if ip_input and has_cidr_notation(ip_input):
+            self.logger.info(f"CIDR notation detected, performing host discovery first...")
+            
+            # Extract CIDR ranges from input
+            cidr_ranges = [ip.strip() for ip in ips if '/' in ip]
+            individual_ips = [ip.strip() for ip in ips if '/' not in ip]
+            
+            # Perform host discovery on CIDR ranges
+            all_live_hosts = list(individual_ips)  # Start with individual IPs
+            for cidr_range in cidr_ranges:
+                live_hosts = await self.perform_host_discovery(cidr_range)
+                all_live_hosts.extend(live_hosts)
+            
+            if not all_live_hosts:
+                self.logger.warning("No live hosts found during discovery")
+                return []
+            
+            # Remove duplicates
+            all_live_hosts = list(dict.fromkeys(all_live_hosts))
+            
+            self.logger.info(f"Live hosts ({len(all_live_hosts)}):")
+            for host in all_live_hosts:
+                self.logger.info(f"  - {host}")
+            
+            # Filter for Windows hosts if -AD flag is set
+            if self.ad_only:
+                windows_hosts = await self.filter_windows_hosts(all_live_hosts)
+                if not windows_hosts:
+                    self.logger.warning("No Windows hosts found")
+                    return []
+                
+                self.logger.info(f"Windows/AD hosts ({len(windows_hosts)}):")
+                for host in windows_hosts:
+                    self.logger.info(f"  - {host}")
+                
+                targets_to_scan = windows_hosts
+            else:
+                targets_to_scan = all_live_hosts
+        
+        self.logger.info(f"Starting nmap scans for {len(targets_to_scan)} targets")
         
         # Create scan tasks
-        tasks = [self.scan_target(ip) for ip in ips]
+        tasks = [self.scan_target(ip) for ip in targets_to_scan]
         
         # Run scans concurrently
         results = await asyncio.gather(*tasks)
