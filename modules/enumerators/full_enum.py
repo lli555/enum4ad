@@ -139,10 +139,6 @@ class FullEnumerator:
                     auth_dir = os.path.join(service_dir, auth_type)
                     os.makedirs(auth_dir, exist_ok=True)
             
-            # Create nmap subdirectory for this IP
-            nmap_dir = os.path.join(ip_dir, "nmap")
-            os.makedirs(nmap_dir, exist_ok=True)
-            
             self.logger.debug(f"Created directory structure for {ip} at {ip_dir}")
             return ip_dir
             
