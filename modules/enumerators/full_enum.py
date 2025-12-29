@@ -14,13 +14,13 @@ from enumerators.web_enum import WebEnumerator
 class FullEnumerator:
     """Full enumeration coordinator"""
     
-    def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False):
+    def __init__(self, output_dir: str, max_concurrent: int = 10, use_rustscan: bool = False, ad_only: bool = False):
         self.output_dir = output_dir
         self.max_concurrent = max_concurrent
         self.logger = logging.getLogger('adtool')
         
         # Initialize components
-        self.port_scanner = PortScanner(output_dir, max_concurrent, use_rustscan=use_rustscan)
+        self.port_scanner = PortScanner(output_dir, max_concurrent, use_rustscan=use_rustscan, ad_only=ad_only)
         self.smb_enumerator = SMBEnumerator(output_dir)
         self.ldap_enumerator = LDAPEnumerator(output_dir)
         self.web_enumerator = WebEnumerator(output_dir)
@@ -32,13 +32,13 @@ class FullEnumerator:
             'web': self.web_enumerator
         }
     
-    async def enumerate_targets(self, ips: List[str]) -> List[Dict]:
+    async def enumerate_targets(self, ips: List[str], ip_input: str = None) -> List[Dict]:
         """Perform full enumeration on targets"""
         self.logger.info(f"Starting full enumeration for {len(ips)} targets")
         
         # Step 1: Port scanning
         self.logger.info("Phase 1: Port scanning")
-        scan_results = await self.port_scanner.scan_targets(ips)
+        scan_results = await self.port_scanner.scan_targets(ips, ip_input=ip_input)
         
         # Step 2: Service enumeration
         self.logger.info("Phase 2: Service enumeration")

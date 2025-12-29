@@ -72,33 +72,40 @@ def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results',
             os.makedirs(os.path.join(output_dir, "nmap"), exist_ok=True)
             
             # Create main enumeration directory, only if not port_scan_only
-            
             if not port_scan_only:
                 enumeration_dir = os.path.join(output_dir, "enumeration")
                 os.makedirs(enumeration_dir, exist_ok=True)
                 
-            # Create service-specific directories
-            services = ["ldap", "smb", "web", "vuln", "misc", "bloodhound"]
-            auth_types = ["unauthenticated", "authenticated"]
-            
-            for service in services:
-                    service_dir = os.path.join(enumeration_dir, service)
-                    os.makedirs(service_dir, exist_ok=True)
-                    
-                    # Create auth subdirectories for each service
-                    for auth_type in auth_types:
-                        auth_dir = os.path.join(service_dir, auth_type)
-                        os.makedirs(auth_dir, exist_ok=True)
+                # Create service-specific directories
+                services = ["ldap", "smb", "web", "vuln", "misc", "bloodhound"]
+                auth_types = ["unauthenticated", "authenticated"]
+                
+                for service in services:
+                        service_dir = os.path.join(enumeration_dir, service)
+                        os.makedirs(service_dir, exist_ok=True)
+                        
+                        # Create auth subdirectories for each service
+                        for auth_type in auth_types:
+                            auth_dir = os.path.join(service_dir, auth_type)
+                            os.makedirs(auth_dir, exist_ok=True)
         
         return output_dir
     except Exception as e:
         raise Exception(f"Failed to create output directory: {e}")
 
 
-def validate_ips(ip_input: str) -> List[str]:
+def validate_ips(ip_input: str, expand_cidr: bool = False) -> List[str]:
     """
-    Validate and expand IP addresses from input string
+    Validate IP addresses and CIDR ranges from input string
     Supports individual IPs, comma-separated IPs, and CIDR notation
+    
+    Args:
+        ip_input: Comma-separated IPs and/or CIDR ranges
+        expand_cidr: If True, expand CIDR ranges to individual IPs.
+                     If False, keep CIDR ranges as-is (for nmap/netexec which handle CIDR)
+    
+    Returns:
+        List of valid IPs/CIDR ranges (expanded if expand_cidr=True)
     """
     ips = []
     
@@ -113,16 +120,20 @@ def validate_ips(ip_input: str) -> List[str]:
             # Check if it's CIDR notation
             if '/' in ip_part:
                 network = ipaddress.ip_network(ip_part, strict=False)
-                # Convert network to list of IPs (skip network and broadcast for /24 and smaller)
-                if network.prefixlen >= 24:
-                    ips.extend([str(ip) for ip in network.hosts()])
+                if expand_cidr:
+                    # Expand CIDR to individual IPs for tools that need them
+                    if network.prefixlen >= 24:
+                        ips.extend([str(ip) for ip in network.hosts()])
+                    else:
+                        # For larger networks, include all IPs
+                        ips.extend([str(ip) for ip in network])
                 else:
-                    # For larger networks, include all IPs
-                    ips.extend([str(ip) for ip in network])
+                    # Keep CIDR (canonical form) for nmap/netexec
+                    ips.append(str(network))
             else:
-                # Single IP address
-                ip = ipaddress.ip_address(ip_part)
-                ips.append(str(ip))
+                # Validate and add single IP address
+                ipaddress.ip_address(ip_part)
+                ips.append(ip_part)
                 
         except ValueError:
             logger = logging.getLogger('adtool')
@@ -132,6 +143,12 @@ def validate_ips(ip_input: str) -> List[str]:
     # Remove duplicates while preserving order
     unique_ips = list(dict.fromkeys(ips))
     return unique_ips
+
+
+def has_cidr_notation(ip_input: str) -> bool:
+    """Check if the input contains any CIDR notation"""
+    ip_parts = [ip.strip() for ip in ip_input.split(',')]
+    return any('/' in ip_part for ip_part in ip_parts if ip_part)
 
 
 def parse_nmap_output(file_path: str) -> dict:

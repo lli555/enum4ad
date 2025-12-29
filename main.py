@@ -117,6 +117,13 @@ Examples:
         help='Use RustScan for faster port scanning (default: disabled).'
     )
     
+    parser.add_argument(
+        '-AD', '--ad-only',
+        action='store_true',
+        dest='ad_only',
+        help='Only scan Windows/AD hosts (uses NetExec to identify Windows systems)'
+    )
+    
     return parser.parse_args()
 
 
@@ -149,32 +156,35 @@ async def main():
     
     # Parse and validate IP addresses
     if args.portscan:
-        ips = validate_ips(args.portscan)
+        # Keep CIDR ranges as-is for port scanner (it handles host discovery)
+        ips = validate_ips(args.portscan, expand_cidr=False)
         if not ips:
             logger.error("No valid IPs provided for port scan")
             return 1
             
         logger.info(f"Starting port scan for {len(ips)} targets")
         # If --rustscan provided, use rustscan
-        scanner = PortScanner(output_dir, args.threads, use_rustscan=args.rustscan)
-        results = await scanner.scan_targets(ips)
+        scanner = PortScanner(output_dir, args.threads, use_rustscan=args.rustscan, ad_only=args.ad_only)
+        results = await scanner.scan_targets(ips, ip_input=args.portscan)
         
         logger.info(f"Port scan completed. Results saved to {output_dir}")
         
     elif args.full:
-        ips = validate_ips(args.full)
+        # Keep CIDR ranges as-is for full enumerator (port scanner handles host discovery)
+        ips = validate_ips(args.full, expand_cidr=False)
         if not ips:
             logger.error("No valid IPs provided for full enumeration")
             return 1
             
         logger.info(f"Starting full enumeration for {len(ips)} targets")
-        enumerator = FullEnumerator(output_dir, args.threads, use_rustscan=args.rustscan)
-        results = await enumerator.enumerate_targets(ips)
+        enumerator = FullEnumerator(output_dir, args.threads, use_rustscan=args.rustscan, ad_only=args.ad_only)
+        results = await enumerator.enumerate_targets(ips, ip_input=args.full)
         
         logger.info(f"Full enumeration completed. Results saved to {output_dir}")
         
     elif args.vulnerabilities:
-        ips = validate_ips(args.vulnerabilities)
+        # Expand CIDR ranges for vulnerability scanner (needs individual IPs)
+        ips = validate_ips(args.vulnerabilities, expand_cidr=True)
         if not ips:
             logger.error("No valid IPs provided for vulnerability scan")
             return 1
@@ -192,7 +202,8 @@ async def main():
         logger.info(f"Vulnerability scan completed. Results saved to {output_dir}")
         
     elif args.authenticated:
-        ips = validate_ips(args.authenticated)
+        # Expand CIDR ranges for authenticated scanner (needs individual IPs)
+        ips = validate_ips(args.authenticated, expand_cidr=True)
         if not ips:
             logger.error("No valid IPs provided for authenticated enumeration")
             return 1
