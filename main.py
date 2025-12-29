@@ -156,7 +156,8 @@ async def main():
     
     # Parse and validate IP addresses
     if args.portscan:
-        ips = validate_ips(args.portscan)
+        # Keep CIDR ranges as-is for port scanner (it handles host discovery)
+        ips = validate_ips(args.portscan, expand_cidr=False)
         if not ips:
             logger.error("No valid IPs provided for port scan")
             return 1
@@ -169,7 +170,8 @@ async def main():
         logger.info(f"Port scan completed. Results saved to {output_dir}")
         
     elif args.full:
-        ips = validate_ips(args.full)
+        # Keep CIDR ranges as-is for full enumerator (port scanner handles host discovery)
+        ips = validate_ips(args.full, expand_cidr=False)
         if not ips:
             logger.error("No valid IPs provided for full enumeration")
             return 1
@@ -181,7 +183,8 @@ async def main():
         logger.info(f"Full enumeration completed. Results saved to {output_dir}")
         
     elif args.vulnerabilities:
-        ips = validate_ips(args.vulnerabilities)
+        # Expand CIDR ranges for vulnerability scanner (needs individual IPs)
+        ips = validate_ips(args.vulnerabilities, expand_cidr=True)
         if not ips:
             logger.error("No valid IPs provided for vulnerability scan")
             return 1
@@ -199,7 +202,8 @@ async def main():
         logger.info(f"Vulnerability scan completed. Results saved to {output_dir}")
         
     elif args.authenticated:
-        ips = validate_ips(args.authenticated)
+        # Expand CIDR ranges for authenticated scanner (needs individual IPs)
+        ips = validate_ips(args.authenticated, expand_cidr=True)
         if not ips:
             logger.error("No valid IPs provided for authenticated enumeration")
             return 1

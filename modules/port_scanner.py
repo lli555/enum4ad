@@ -101,7 +101,9 @@ class PortScanner:
         """
         self.logger.info(f"Performing host discovery on {ip_range}...")
         
-        output_file = os.path.join(self.output_dir, "live_hosts.txt")
+        # Create unique filename for each CIDR range
+        safe_range = ip_range.replace('/', '_').replace(':', '_')
+        output_file = os.path.join(self.output_dir, f"live_hosts_{safe_range}.txt")
         
         cmd = [
             'nmap',
@@ -214,6 +216,7 @@ class PortScanner:
         """
         Scan multiple targets concurrently
         If ip_input contains CIDR notation, perform host discovery first
+        If -AD flag is set, filter for Windows hosts only
         ips can be a mix of individual IPs and CIDR ranges
         """
         # Import here to avoid circular import
@@ -278,6 +281,22 @@ class PortScanner:
                     self.logger.info(f"  - {host}")
                 
                 targets_to_scan = all_live_hosts
+        else:
+            # No CIDR ranges, but check if -AD flag is set for individual IPs
+            if self.ad_only:
+                self.logger.info(f"Filtering {len(ips)} individual IPs for Windows hosts using NetExec...")
+                
+                windows_hosts = await self.filter_windows_hosts(ips)
+                
+                if not windows_hosts:
+                    self.logger.warning("No Windows hosts found")
+                    return []
+                
+                self.logger.info(f"Windows/AD hosts ({len(windows_hosts)}):")
+                for host in windows_hosts:
+                    self.logger.info(f"  - {host}")
+                
+                targets_to_scan = windows_hosts
         
         self.logger.info(f"Starting nmap scans for {len(targets_to_scan)} targets")
         

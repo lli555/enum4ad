@@ -94,11 +94,18 @@ def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results',
         raise Exception(f"Failed to create output directory: {e}")
 
 
-def validate_ips(ip_input: str) -> List[str]:
+def validate_ips(ip_input: str, expand_cidr: bool = False) -> List[str]:
     """
     Validate IP addresses and CIDR ranges from input string
     Supports individual IPs, comma-separated IPs, and CIDR notation
-    Returns list of valid IPs/CIDR ranges (does NOT expand CIDR ranges)
+    
+    Args:
+        ip_input: Comma-separated IPs and/or CIDR ranges
+        expand_cidr: If True, expand CIDR ranges to individual IPs.
+                     If False, keep CIDR ranges as-is (for nmap/netexec which handle CIDR)
+    
+    Returns:
+        List of valid IPs/CIDR ranges (expanded if expand_cidr=True)
     """
     ips = []
     
@@ -112,11 +119,19 @@ def validate_ips(ip_input: str) -> List[str]:
         try:
             # Check if it's CIDR notation
             if '/' in ip_part:
-                # Validate CIDR notation but don't expand it
-                ipaddress.ip_network(ip_part, strict=False)
-                ips.append(ip_part)
+                network = ipaddress.ip_network(ip_part, strict=False)
+                if expand_cidr:
+                    # Expand CIDR to individual IPs for tools that need them
+                    if network.prefixlen >= 24:
+                        ips.extend([str(ip) for ip in network.hosts()])
+                    else:
+                        # For larger networks, include all IPs
+                        ips.extend([str(ip) for ip in network])
+                else:
+                    # Keep CIDR as-is for nmap/netexec
+                    ips.append(ip_part)
             else:
-                # Validate single IP address
+                # Validate and add single IP address
                 ipaddress.ip_address(ip_part)
                 ips.append(ip_part)
                 

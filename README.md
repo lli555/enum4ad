@@ -183,8 +183,9 @@ ad_enum_results_YYYYMMDD_HHMMSS/
 │   └── 10.0.200.0_24/         # Another subnet folder
 │       ├── nmap_10.0.200.1.txt
 │       └── nmap_10.0.200.15.txt
-├── live_hosts.txt              # Host discovery results (if CIDR used)
-└── netexec_smb.txt            # NetExec output (if -AD flag used)
+├── live_hosts_10.0.0.0_24.txt     # Host discovery for first subnet
+├── live_hosts_10.0.200.0_24.txt   # Host discovery for second subnet
+└── netexec_smb.txt                # NetExec output (if -AD flag used)
 ```
 
 ### Full Enumeration Output
@@ -196,8 +197,8 @@ ad_enum_results_YYYYMMDD_HHMMSS/
 │   │   └── nmap_192.168.1.20.txt
 │   └── individual_ips/         # Individual IPs (if any)
 │       └── nmap_10.1.1.1.txt
-├── live_hosts.txt
-├── netexec_smb.txt            # If -AD flag used
+├── live_hosts_192.168.1.0_24.txt  # Host discovery per subnet
+├── netexec_smb.txt                # If -AD flag used
 ├── enumeration/
 │   ├── smb_shares_10.1.1.1.txt
 │   ├── ldap_basic_10.1.1.1.txt
