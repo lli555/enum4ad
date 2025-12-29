@@ -197,6 +197,11 @@ class PortScanner:
                 match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
                 if match:
                     ip = match.group(1)
+                    # Validate the extracted IP to avoid adding invalid or IP-like patterns
+                    try:
+                        ipaddress.ip_address(ip)
+                    except ValueError:
+                        continue
                     if ip not in windows_hosts:
                         windows_hosts.append(ip)
             
