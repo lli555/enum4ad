@@ -72,23 +72,22 @@ def create_output_directory(base_dir: str, path_prefix: str = 'ad_enum_results',
             os.makedirs(os.path.join(output_dir, "nmap"), exist_ok=True)
             
             # Create main enumeration directory, only if not port_scan_only
-            
             if not port_scan_only:
                 enumeration_dir = os.path.join(output_dir, "enumeration")
                 os.makedirs(enumeration_dir, exist_ok=True)
                 
-            # Create service-specific directories
-            services = ["ldap", "smb", "web", "vuln", "misc", "bloodhound"]
-            auth_types = ["unauthenticated", "authenticated"]
-            
-            for service in services:
-                    service_dir = os.path.join(enumeration_dir, service)
-                    os.makedirs(service_dir, exist_ok=True)
-                    
-                    # Create auth subdirectories for each service
-                    for auth_type in auth_types:
-                        auth_dir = os.path.join(service_dir, auth_type)
-                        os.makedirs(auth_dir, exist_ok=True)
+                # Create service-specific directories
+                services = ["ldap", "smb", "web", "vuln", "misc", "bloodhound"]
+                auth_types = ["unauthenticated", "authenticated"]
+                
+                for service in services:
+                        service_dir = os.path.join(enumeration_dir, service)
+                        os.makedirs(service_dir, exist_ok=True)
+                        
+                        # Create auth subdirectories for each service
+                        for auth_type in auth_types:
+                            auth_dir = os.path.join(service_dir, auth_type)
+                            os.makedirs(auth_dir, exist_ok=True)
         
         return output_dir
     except Exception as e:
