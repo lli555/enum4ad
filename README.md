@@ -247,7 +247,7 @@ Example workflow for `10.0.0.0/24,10.0.200.0/24`:
 ```
 
 #### With -AD Flag (Windows Host Discovery)
-1. Runs `netexec smb {ip_range}` directly for each CIDR range
+1. Runs a single `netexec smb` command with all CIDR ranges passed as arguments
 2. Identifies and displays only Windows/AD hosts
 3. Saves complete NetExec output to `netexec_smb.txt`
 4. Performs detailed nmap scans only on Windows hosts
