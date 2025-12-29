@@ -144,28 +144,25 @@ class PortScanner:
     
     async def filter_windows_hosts(self, ips: List[str]) -> List[str]:
         """
-        Filter for Windows hosts using NetExec
-        Returns list of IPs that are Windows systems
+        Discover Windows hosts using NetExec
+        ips can be individual IPs, comma-separated IPs, or CIDR ranges
+        Returns list of IPs that responded to SMB probes
         """
         if not ips:
             return []
         
-        self.logger.info(f"Filtering for Windows/AD hosts using NetExec...")
+        self.logger.info(f"Discovering Windows/AD hosts using NetExec...")
         
-        # Create a single IP range or comma-separated list for netexec
-        ip_list = ','.join(ips)
-        
-        output_file = os.path.join(self.output_dir, "windows_hosts.txt")
+        output_file = os.path.join(self.output_dir, "netexec_smb.txt")
         
         cmd = [
             'netexec',
             'smb',
-            ip_list,
-            '--log',
-            output_file
+            *ips,  # Pass each IP/CIDR as separate argument
         ]
         
         try:
+            # Run netexec and capture output
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -173,31 +170,36 @@ class PortScanner:
             )
             
             stdout, stderr = await process.communicate()
-            
-            # Parse output to find Windows hosts
-            # NetExec shows Windows hosts with format like: SMB  10.0.0.1  445  HOSTNAME  [*] Windows...
-            windows_hosts = []
             output = stdout.decode()
             
-            for line in output.split('\n'):
-                if 'Windows' in line or 'SMB' in line:
-                    # Extract IP from the line
-                    match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
-                    if match:
-                        ip = match.group(1)
-                        if ip not in windows_hosts:
-                            windows_hosts.append(ip)
+            # Save the full output
+            try:
+                with open(output_file, 'w') as f:
+                    f.write(output)
+                self.logger.info(f"NetExec output saved to {output_file}")
+            except Exception as e:
+                self.logger.warning(f"Could not save NetExec output: {e}")
             
-            self.logger.info(f"Windows host filtering complete: {len(windows_hosts)} Windows hosts found")
+            # Extract all IPs from output (any line with an IP is a responding host)
+            windows_hosts = []
+            for line in output.split('\n'):
+                # Look for IP addresses in the output
+                match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
+                if match:
+                    ip = match.group(1)
+                    if ip not in windows_hosts:
+                        windows_hosts.append(ip)
+            
+            self.logger.info(f"NetExec scan complete: {len(windows_hosts)} hosts found")
             return windows_hosts
             
         except FileNotFoundError:
             self.logger.error("NetExec not found. Please install NetExec to use -AD flag.")
             self.logger.info("Install with: pipx install git+https://github.com/Pennyw0rth/NetExec")
-            return ips  # Return all IPs if NetExec is not available
+            return []
         except Exception as e:
-            self.logger.error(f"Error during Windows host filtering: {e}")
-            return ips  # Return all IPs on error
+            self.logger.error(f"Error during NetExec scan: {e}")
+            return []
     
     async def scan_targets(self, ips: List[str], ip_input: str = None) -> List[Dict]:
         """
@@ -212,32 +214,13 @@ class PortScanner:
         
         # Check if we should perform host discovery (only for CIDR ranges)
         if ip_input and has_cidr_notation(ip_input):
-            self.logger.info(f"CIDR notation detected, performing host discovery first...")
-            
-            # Extract CIDR ranges from input
-            cidr_ranges = [ip.strip() for ip in ips if '/' in ip]
-            individual_ips = [ip.strip() for ip in ips if '/' not in ip]
-            
-            # Perform host discovery on CIDR ranges
-            all_live_hosts = list(individual_ips)  # Start with individual IPs
-            for cidr_range in cidr_ranges:
-                live_hosts = await self.perform_host_discovery(cidr_range)
-                all_live_hosts.extend(live_hosts)
-            
-            if not all_live_hosts:
-                self.logger.warning("No live hosts found during discovery")
-                return []
-            
-            # Remove duplicates
-            all_live_hosts = list(dict.fromkeys(all_live_hosts))
-            
-            self.logger.info(f"Live hosts ({len(all_live_hosts)}):")
-            for host in all_live_hosts:
-                self.logger.info(f"  - {host}")
-            
-            # Filter for Windows hosts if -AD flag is set
+            # If -AD flag is set, use netexec directly for Windows host discovery
             if self.ad_only:
-                windows_hosts = await self.filter_windows_hosts(all_live_hosts)
+                self.logger.info(f"CIDR notation detected with -AD flag, using NetExec to find Windows hosts...")
+                
+                # NetExec can handle CIDR ranges directly, so pass them as-is
+                windows_hosts = await self.filter_windows_hosts(ips)
+                
                 if not windows_hosts:
                     self.logger.warning("No Windows hosts found")
                     return []
@@ -248,6 +231,30 @@ class PortScanner:
                 
                 targets_to_scan = windows_hosts
             else:
+                # Use nmap for general host discovery
+                self.logger.info(f"CIDR notation detected, performing host discovery first...")
+                
+                # Extract CIDR ranges from input
+                cidr_ranges = [ip.strip() for ip in ips if '/' in ip]
+                individual_ips = [ip.strip() for ip in ips if '/' not in ip]
+                
+                # Perform host discovery on CIDR ranges
+                all_live_hosts = list(individual_ips)  # Start with individual IPs
+                for cidr_range in cidr_ranges:
+                    live_hosts = await self.perform_host_discovery(cidr_range)
+                    all_live_hosts.extend(live_hosts)
+                
+                if not all_live_hosts:
+                    self.logger.warning("No live hosts found during discovery")
+                    return []
+                
+                # Remove duplicates
+                all_live_hosts = list(dict.fromkeys(all_live_hosts))
+                
+                self.logger.info(f"Live hosts ({len(all_live_hosts)}):")
+                for host in all_live_hosts:
+                    self.logger.info(f"  - {host}")
+                
                 targets_to_scan = all_live_hosts
         
         self.logger.info(f"Starting nmap scans for {len(targets_to_scan)} targets")
