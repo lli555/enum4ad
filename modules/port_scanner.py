@@ -180,7 +180,7 @@ class PortScanner:
             )
             
             stdout, stderr = await process.communicate()
-            output = stdout.decode()
+            output = stdout.decode('utf-8', errors='replace')
             
             # Save the full output
             try:
