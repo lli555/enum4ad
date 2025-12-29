@@ -191,6 +191,7 @@ class PortScanner:
                         windows_hosts.append(ip)
             
             self.logger.info(f"NetExec scan complete: {len(windows_hosts)} hosts found")
+            self.logger.info(f"Results: {output}")
             return windows_hosts
             
         except FileNotFoundError:
@@ -225,9 +226,9 @@ class PortScanner:
                     self.logger.warning("No Windows hosts found")
                     return []
                 
-                self.logger.info(f"Windows/AD hosts ({len(windows_hosts)}):")
-                for host in windows_hosts:
-                    self.logger.info(f"  - {host}")
+                # self.logger.info(f"Windows/AD hosts ({len(windows_hosts)}):")
+                # for host in windows_hosts:
+                #     self.logger.info(f"  - {host}")
                 
                 targets_to_scan = windows_hosts
             else:
