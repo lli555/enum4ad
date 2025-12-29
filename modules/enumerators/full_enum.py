@@ -20,8 +20,8 @@ class FullEnumerator:
         self.max_concurrent = max_concurrent
         self.logger = logging.getLogger('adtool')
         
-        # Initialize port scanner
-        self.port_scanner = PortScanner(output_dir, max_concurrent, use_rustscan=use_rustscan, ad_only=ad_only)
+        # Initialize port scanner with full_enum_mode=True for aggressive port scanning
+        self.port_scanner = PortScanner(output_dir, max_concurrent, use_rustscan=use_rustscan, ad_only=ad_only, full_enum_mode=True)
         
         # Semaphore to limit concurrent IP-level enumerations
         # This prevents resource exhaustion when scanning many targets (e.g., 100+ IPs)
