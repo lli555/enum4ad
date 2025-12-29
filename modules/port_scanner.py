@@ -267,19 +267,20 @@ class PortScanner:
                 
                 # Perform host discovery on CIDR ranges
                 all_live_hosts = list(individual_ips)  # Start with individual IPs
+                seen_hosts = set(all_live_hosts)       # Track hosts already added
                 for cidr_range in cidr_ranges:
                     live_hosts = await self.perform_host_discovery(cidr_range)
-                    # Map each discovered host to its subnet
+                    # Map each discovered host to its subnet, avoiding duplicates
                     for host_ip in live_hosts:
+                        if host_ip in seen_hosts:
+                            continue
                         ip_to_subnet[host_ip] = cidr_range
-                    all_live_hosts.extend(live_hosts)
+                        all_live_hosts.append(host_ip)
+                        seen_hosts.add(host_ip)
                 
                 if not all_live_hosts:
                     self.logger.warning("No live hosts found during discovery")
                     return []
-                
-                # Remove duplicates
-                all_live_hosts = list(dict.fromkeys(all_live_hosts))
                 
                 self.logger.info(f"Live hosts ({len(all_live_hosts)}):")
                 for host in all_live_hosts:
