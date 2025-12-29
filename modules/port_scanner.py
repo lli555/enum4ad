@@ -24,12 +24,20 @@ class PortScanner:
         self.use_rustscan = use_rustscan
         self.ad_only = ad_only
     
-    async def scan_target(self, ip: str) -> Dict:
+    async def scan_target(self, ip: str, subnet: str = None) -> Dict:
         """Scan a single target with nmap"""
         async with self.semaphore:
             # sanitize ip for filenames (handles IPv6 and CIDR)
-            safe_ip = ip.replace(':', '_').replace('/', '_') # Probably not needed here but just in case
-            output_dir_nmap = os.path.join(self.output_dir, "nmap")
+            safe_ip = ip.replace(':', '_').replace('/', '_')
+            
+            # Determine output directory based on subnet
+            if subnet:
+                # Sanitize subnet for folder name
+                safe_subnet = subnet.replace('/', '_').replace(':', '_')
+                output_dir_nmap = os.path.join(self.output_dir, "nmap", safe_subnet)
+            else:
+                output_dir_nmap = os.path.join(self.output_dir, "nmap", "individual_ips")
+            
             os.makedirs(output_dir_nmap, exist_ok=True)
             output_file = os.path.join(output_dir_nmap, f"nmap_{safe_ip}.txt")
 
@@ -212,6 +220,8 @@ class PortScanner:
         from utils import has_cidr_notation
         
         targets_to_scan = ips
+        # Track which subnet each IP belongs to for organizing output
+        ip_to_subnet = {}
         
         # Check if we should perform host discovery (only for CIDR ranges)
         if ip_input and has_cidr_notation(ip_input):
@@ -226,6 +236,18 @@ class PortScanner:
                     self.logger.warning("No Windows hosts found")
                     return []
                 
+                # Map each Windows host to its subnet
+                for host_ip in windows_hosts:
+                    for subnet in ips:
+                        if '/' in subnet:
+                            try:
+                                network = ipaddress.ip_network(subnet, strict=False)
+                                if ipaddress.ip_address(host_ip) in network:
+                                    ip_to_subnet[host_ip] = subnet
+                                    break
+                            except ValueError:
+                                continue
+                
                 targets_to_scan = windows_hosts
             else:
                 # Use nmap for general host discovery
@@ -239,6 +261,9 @@ class PortScanner:
                 all_live_hosts = list(individual_ips)  # Start with individual IPs
                 for cidr_range in cidr_ranges:
                     live_hosts = await self.perform_host_discovery(cidr_range)
+                    # Map each discovered host to its subnet
+                    for host_ip in live_hosts:
+                        ip_to_subnet[host_ip] = cidr_range
                     all_live_hosts.extend(live_hosts)
                 
                 if not all_live_hosts:
@@ -256,8 +281,8 @@ class PortScanner:
         
         self.logger.info(f"Starting nmap scans for {len(targets_to_scan)} targets")
         
-        # Create scan tasks
-        tasks = [self.scan_target(ip) for ip in targets_to_scan]
+        # Create scan tasks with subnet information
+        tasks = [self.scan_target(ip, subnet=ip_to_subnet.get(ip)) for ip in targets_to_scan]
         
         # Run scans concurrently
         results = await asyncio.gather(*tasks)
