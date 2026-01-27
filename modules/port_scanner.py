@@ -48,11 +48,11 @@ class PortScanner:
                 rustscan_bin = shutil.which('rustscan') or 'rustscan'
                 if self.full_enum_mode:
                     # Full enumeration mode: aggressive port discovery
-                    nmap_args = ['-Pn', '-n', '-sC', '-sV', '-oN', output_file]
+                    nmap_args = ['-Pn', '-n', '-sC', '-sV', '-p-', '--open', '-oN', output_file]
                     cmd = [rustscan_bin, '-a', ip, '-r', '1-65535', '-u', '5000', '--'] + nmap_args
                 else:
                     # Port scan only mode: standard rustscan
-                    nmap_args = ['-Pn', '-n', '-sC', '-sV', '-oN', output_file]
+                    nmap_args = ['-Pn', '-n', '-sC', '-sV', '-p-', '--open', '-oN', output_file]
                     cmd = [rustscan_bin, '-a', ip, '-r', '1-65535', '-u', '5000', '--'] + nmap_args
             else:
                 if self.full_enum_mode:
@@ -77,7 +77,9 @@ class PortScanner:
                         '-Pn',      # Skip host discovery
                         '-n',       # No DNS resolution
                         '-sC',      # Default scripts
-                        '-sV',      # Version detection
+                        '-sV',
+                        '-p-',
+                        '--open',      # Version detection
                         '-oN',      # Normal output
                         output_file,
                         ip
